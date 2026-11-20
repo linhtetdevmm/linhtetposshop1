@@ -1,0 +1,6 @@
+{
+  "name": "ShwePOS — Bilingual POS & Inventory Suite",
+  "description": "Fast, lightweight Myanmar & English Point-of-Sale Dashboard with Inventory, Sales, Purchases, Debts, Expenses, Delivery, PNG/PDF Vouchers, CSV Reports, Telegram Alerts, and Firebase/Supabase sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
