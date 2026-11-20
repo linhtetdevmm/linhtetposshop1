@@ -492,13 +492,15 @@ export const SettingsSyncView: React.FC = () => {
                     : 'text-titanium-500 dark:text-titanium-400'
                 }`}
               >
-                {integrations.supabaseConfigured ? t('configured') : t('notConfiguredEnv')}
+                {integrations.supabaseConfigured
+                  ? `${t('configured')} (${integrations.supabaseMode === 'server' ? 'Server' : 'Web'})`
+                  : t('notConfiguredEnv')}
               </span>
             </div>
             <p className="text-xs text-titanium-600 dark:text-titanium-400 leading-relaxed">
               {lang === 'my'
-                ? 'Firebase အပြင် Supabase PostgreSQL နှင့်ပါ တွဲဖက်အသုံးပြုလိုပါက SUPABASE_URL နှင့် SUPABASE_ANON_KEY ကို Server Environment Secrets တွင်ထည့်ပြီး အောက်ပါ SQL Schema ကို Run ထားရုံဖြင့် Sync တင်/ပြန်ဆွဲနိုင်ပါသည်။'
-                : 'Mirror or restore your entire POS database with Supabase PostgreSQL via the secure /api/supabase/* server proxy. Set SUPABASE_URL and SUPABASE_ANON_KEY in environment secrets and run the schema below.'}
+                ? 'Firebase အပြင် Supabase PostgreSQL နှင့်ပါ တွဲဖက်အသုံးပြုနိုင်ပါသည်။ Full-Stack Server တွင် SUPABASE_URL နှင့် SUPABASE_ANON_KEY (သို့) Static Web Hosting (Vercel/Netlify) တွင် VITE_SUPABASE_URL နှင့် VITE_SUPABASE_ANON_KEY ထည့်ပြီး Redeploy လုပ်ရုံဖြင့် Sync တင်/ပြန်ဆွဲနိုင်ပါသည်။'
+                : 'Mirror or restore your entire POS database with Supabase PostgreSQL. Works via /api/supabase/* server proxy (SUPABASE_URL + SUPABASE_ANON_KEY) or direct Web client on Vercel/Netlify (VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY).'}
             </p>
             <div className="flex flex-wrap gap-2 pt-1">
               <button
@@ -674,7 +676,15 @@ export const SettingsSyncView: React.FC = () => {
                 <code className="font-mono-num text-xs bg-titanium-100 dark:bg-titanium-800 px-1.5 py-0.5 rounded">
                   SUPABASE_ANON_KEY
                 </code>{' '}
-                ထည့်လိုက်လျှင် တစ်ချက်နှိပ်ရုံဖြင့် Firebase ↔ Supabase Sync လုပ်နိုင်ပါပြီ။
+                (Vercel / Netlify စသည့် Web Hosting တွင် Deploy လုပ်ပါက{' '}
+                <code className="font-mono-num text-xs bg-titanium-100 dark:bg-titanium-800 px-1.5 py-0.5 rounded">
+                  VITE_SUPABASE_URL
+                </code>{' '}
+                နှင့်{' '}
+                <code className="font-mono-num text-xs bg-titanium-100 dark:bg-titanium-800 px-1.5 py-0.5 rounded">
+                  VITE_SUPABASE_ANON_KEY
+                </code>{' '}
+                ကို Environment Variables ထဲထည့်ပြီး Redeploy လုပ်ပေးပါ)။
               </li>
               <li>
                 <strong>Telegram Bot ချိတ်ဆက်ခြင်း:</strong> Telegram ရှိ{' '}

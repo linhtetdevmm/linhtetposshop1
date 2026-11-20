@@ -7,31 +7,58 @@ import { createClient } from '@supabase/supabase-js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function getTelegramConfig() {
+  const token = (
+    process.env.TELEGRAM_BOT_TOKEN ||
+    process.env.VITE_TELEGRAM_BOT_TOKEN ||
+    ''
+  ).trim();
+  const chatId = (
+    process.env.TELEGRAM_CHAT_ID ||
+    process.env.VITE_TELEGRAM_CHAT_ID ||
+    ''
+  ).trim();
+  return { token, chatId };
+}
+
+function getSupabaseConfig() {
+  const url = (
+    process.env.SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    ''
+  ).trim();
+  const key = (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ''
+  ).trim();
+  return { url, key };
+}
+
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: '10mb' }));
 
   // Check configured server-side integrations without exposing secrets
   app.get('/api/integrations/status', (_req, res) => {
-    const telegramConfigured = Boolean(
-      process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID
-    );
-    const supabaseConfigured = Boolean(
-      process.env.SUPABASE_URL &&
-        (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)
-    );
+    const { token, chatId } = getTelegramConfig();
+    const { url, key } = getSupabaseConfig();
     res.json({
-      telegramConfigured,
-      supabaseConfigured,
+      telegramConfigured: Boolean(token && chatId),
+      supabaseConfigured: Boolean(url && key),
     });
   });
 
   // Telegram Bot Proxy Endpoint
   app.post('/api/telegram/send', async (req, res) => {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
+    const { token, chatId } = getTelegramConfig();
 
     if (!token || !chatId) {
       return res.status(400).json({
@@ -77,14 +104,13 @@ async function startServer() {
 
   // Supabase Push Sync Proxy Endpoint
   app.post('/api/supabase/sync', async (req, res) => {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+    const { url, key } = getSupabaseConfig();
 
     if (!url || !key) {
       return res.status(400).json({
         ok: false,
         error:
-          'Supabase is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_ANON_KEY) to your environment secrets and run supabase_schema.sql.',
+          'Supabase is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_ANON_KEY / VITE_SUPABASE_*) to your environment secrets and run supabase_schema.sql.',
       });
     }
 
@@ -269,8 +295,7 @@ async function startServer() {
 
   // Supabase Pull Sync Proxy Endpoint
   app.post('/api/supabase/pull', async (req, res) => {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+    const { url, key } = getSupabaseConfig();
 
     if (!url || !key) {
       return res.status(400).json({
@@ -418,9 +443,39 @@ async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false },
+      server: { middlewareMode: true, hmr: false, ws: false },
       appType: 'spa',
     });
+
+    // When HMR is disabled in middleware mode, Vite 8 still serves /@vite/client
+    // with an active WebSocket transport.connect() call against port 24678.
+    // Neutralize the WebSocket connection while keeping all exports (updateStyle,
+    // removeStyle, createHotContext, injectQuery, ErrorOverlay) intact.
+    app.get('/@vite/client', async (_req, res, next) => {
+      try {
+        const result = await vite.transformRequest('/@vite/client');
+        if (!result?.code) return next();
+        const patchedCode = result.code
+          .replace(
+            'transport.connect(createHMRHandler(handleMessage));',
+            '/* HMR WebSocket disabled in middleware mode */'
+          )
+          .replace(
+            'setupForwardConsoleHandler(transport, forwardConsole);',
+            '/* Console forwarding disabled with HMR */'
+          )
+          .replace(
+            'wsTransport.send(data);',
+            '/* HMR send disabled */'
+          );
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache');
+        return res.status(200).send(patchedCode);
+      } catch (err) {
+        return next(err);
+      }
+    });
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(__dirname, 'dist');

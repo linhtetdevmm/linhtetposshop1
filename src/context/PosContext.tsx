@@ -51,12 +51,18 @@ import {
 } from '../types/pos';
 import { createSeedDataset } from '../data/seedData';
 import { generateDocId, generateVoucherNo, getTodayISO } from '../lib/format';
+import {
+  isClientSupabaseConfigured,
+  pullPosDataDirectFromSupabase,
+  pushPosDataDirectToSupabase,
+} from '../lib/supabaseSync';
 
 const LOCAL_STORAGE_KEY = 'shwepos_local_state_v1';
 
 interface IntegrationStatus {
   telegramConfigured: boolean;
   supabaseConfigured: boolean;
+  supabaseMode: 'server' | 'client' | 'none';
 }
 
 interface ToastMessage {
@@ -192,9 +198,13 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     return localStorage.getItem('shwepos_theme') === 'dark';
   });
-  const [integrations, setIntegrations] = useState<IntegrationStatus>({
-    telegramConfigured: false,
-    supabaseConfigured: false,
+  const [integrations, setIntegrations] = useState<IntegrationStatus>(() => {
+    const clientSupa = isClientSupabaseConfigured();
+    return {
+      telegramConfigured: false,
+      supabaseConfigured: clientSupa,
+      supabaseMode: clientSupa ? 'client' : 'none',
+    };
   });
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
@@ -246,19 +256,40 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [darkMode]);
 
-  // Fetch server-side integration availability (Telegram & Supabase)
+  // Fetch server-side integration availability (Telegram & Supabase) and merge with Web client fallback
   useEffect(() => {
+    const clientSupa = isClientSupabaseConfigured();
     fetch('/api/integrations/status')
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        const contentType = r.headers.get('content-type') || '';
+        if (!r.ok || !contentType.includes('application/json')) return null;
+        return r.json();
+      })
       .then((data) => {
         if (data) {
+          const serverSupa = Boolean(data.supabaseConfigured);
           setIntegrations({
             telegramConfigured: Boolean(data.telegramConfigured),
-            supabaseConfigured: Boolean(data.supabaseConfigured),
+            supabaseConfigured: serverSupa || clientSupa,
+            supabaseMode: serverSupa ? 'server' : clientSupa ? 'client' : 'none',
           });
+        } else if (clientSupa) {
+          setIntegrations((prev) => ({
+            ...prev,
+            supabaseConfigured: true,
+            supabaseMode: 'client',
+          }));
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (clientSupa) {
+          setIntegrations((prev) => ({
+            ...prev,
+            supabaseConfigured: true,
+            supabaseMode: 'client',
+          }));
+        }
+      });
   }, []);
 
   // Persist local demo state when not signed in
@@ -1586,24 +1617,57 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const pushToSupabase = useCallback(async (): Promise<boolean> => {
     const ownerId = user?.uid || 'local_demo';
+    const payload = {
+      ownerId,
+      shop,
+      products,
+      sales,
+      purchases,
+      stockLogs,
+      debts,
+      expenses,
+      deliveries,
+    };
+
+    const tryDirectClientSync = async (): Promise<boolean> => {
+      const direct = await pushPosDataDirectToSupabase(payload);
+      if (!direct.ok) {
+        showToast(
+          direct.error ||
+            (lang === 'my'
+              ? 'SUPABASE_URL နှင့် SUPABASE_ANON_KEY (သို့) VITE_SUPABASE_* ကို Environment Variables တွင် ထည့်သွင်းပေးပါ။'
+              : 'Configure SUPABASE_URL & SUPABASE_ANON_KEY (or VITE_SUPABASE_*) in environment variables.'),
+          'error'
+        );
+        return false;
+      }
+      showToast(
+        lang === 'my' ? 'Supabase PostgreSQL သို့ Sync တင်ပြီးပါပြီ။' : 'Synced all POS data to Supabase.'
+      );
+      return true;
+    };
+
+    // If running on static Web hosting (Vercel / Netlify / Electron) with client keys, sync directly
+    if (integrations.supabaseMode === 'client') {
+      return tryDirectClientSync();
+    }
+
     try {
       const res = await fetch('/api/supabase/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ownerId,
-          shop,
-          products,
-          sales,
-          purchases,
-          stockLogs,
-          debts,
-          expenses,
-          deliveries,
-        }),
+        body: JSON.stringify(payload),
       });
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        if (isClientSupabaseConfigured()) return tryDirectClientSync();
+        throw new Error('Server API route not available on static hosting.');
+      }
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || !data.ok) {
+        if (res.status === 400 && isClientSupabaseConfigured()) {
+          return tryDirectClientSync();
+        }
         showToast(
           data.error ||
             (lang === 'my'
@@ -1618,25 +1682,76 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
       return true;
     } catch {
-      showToast(lang === 'my' ? 'Supabase Sync မအောင်မြင်ပါ။' : 'Supabase sync failed.', 'error');
+      if (isClientSupabaseConfigured()) {
+        return tryDirectClientSync();
+      }
+      showToast(
+        lang === 'my'
+          ? 'Supabase Sync မအောင်မြင်ပါ။ Web Deploy တွင် VITE_SUPABASE_URL နှင့် VITE_SUPABASE_ANON_KEY ထည့်ပြီး Redeploy လုပ်ပါ။'
+          : 'Supabase sync failed. For static Web deploys, add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY and redeploy.',
+        'error'
+      );
       return false;
     }
-  }, [user, shop, products, sales, purchases, stockLogs, debts, expenses, deliveries, lang, showToast]);
+  }, [
+    user,
+    shop,
+    products,
+    sales,
+    purchases,
+    stockLogs,
+    debts,
+    expenses,
+    deliveries,
+    integrations.supabaseMode,
+    lang,
+    showToast,
+  ]);
 
   const pullFromSupabase = useCallback(async (): Promise<boolean> => {
     const ownerId = user?.uid || 'local_demo';
+
+    const tryDirectClientPull = async (): Promise<boolean> => {
+      const direct = await pullPosDataDirectFromSupabase(ownerId);
+      if (!direct.ok || !direct.data) {
+        showToast(direct.error || 'Supabase pull failed.', 'error');
+        return false;
+      }
+      if (!direct.data.shop) {
+        showToast(
+          lang === 'my' ? 'Supabase တွင် ဒေတာမရှိသေးပါ။' : 'No records found in Supabase for this account.',
+          'info'
+        );
+        return false;
+      }
+      await restoreBackupJson(direct.data);
+      return true;
+    };
+
+    if (integrations.supabaseMode === 'client') {
+      return tryDirectClientPull();
+    }
+
     try {
       const res = await fetch('/api/supabase/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ownerId }),
       });
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        if (isClientSupabaseConfigured()) return tryDirectClientPull();
+        throw new Error('Server API route not available on static hosting.');
+      }
       const payload = (await res.json()) as {
         ok?: boolean;
         error?: string;
         data?: PosBackupPayload;
       };
       if (!res.ok || !payload.ok || !payload.data) {
+        if (res.status === 400 && isClientSupabaseConfigured()) {
+          return tryDirectClientPull();
+        }
         showToast(payload.error || 'Supabase pull failed.', 'error');
         return false;
       }
@@ -1650,10 +1765,13 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await restoreBackupJson(payload.data);
       return true;
     } catch {
+      if (isClientSupabaseConfigured()) {
+        return tryDirectClientPull();
+      }
       showToast(lang === 'my' ? 'Supabase မှ ဆွဲယူမှု မအောင်မြင်ပါ။' : 'Supabase pull failed.', 'error');
       return false;
     }
-  }, [user, restoreBackupJson, lang, showToast]);
+  }, [user, restoreBackupJson, integrations.supabaseMode, lang, showToast]);
 
   const value: PosContextValue = {
     user,

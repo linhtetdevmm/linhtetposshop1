@@ -2,10 +2,62 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, loadEnv} from 'vite';
 
-export default defineConfig(() => {
+function isSafePublicSupabaseKey(key: string): boolean {
+  const trimmed = key.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('sb_secret_')) return false;
+  // Reject JWT keys whose payload role is service_role
+  const parts = trimmed.split('.');
+  if (parts.length === 3) {
+    try {
+      const json = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as {
+        role?: string;
+      };
+      if (json.role && json.role !== 'anon') return false;
+    } catch {
+      // Non-JWT publishable key formats (e.g. sb_publishable_*) are allowed
+    }
+  }
+  return true;
+}
+
+export default defineConfig(({mode}) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  const publicSupabaseUrl = (
+    env.VITE_SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL ||
+    env.SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    ''
+  ).trim();
+
+  const rawPublicSupabaseKey = (
+    env.VITE_SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    env.SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ''
+  ).trim();
+
+  const publicSupabaseAnonKey = isSafePublicSupabaseKey(rawPublicSupabaseKey)
+    ? rawPublicSupabaseKey
+    : '';
+
   return {
+    define: {
+      __SHWEPOS_SUPABASE_URL__: JSON.stringify(publicSupabaseUrl),
+      __SHWEPOS_SUPABASE_ANON_KEY__: JSON.stringify(publicSupabaseAnonKey),
+    },
     plugins: [
       react(),
       tailwindcss(),
