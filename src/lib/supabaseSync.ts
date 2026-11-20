@@ -64,6 +64,35 @@ function getClientSupabase(): SupabaseClient | null {
   return cachedClient;
 }
 
+export async function checkClientSupabaseHealth(): Promise<{
+  reachable: boolean;
+  error: string | null;
+}> {
+  const supabase = getClientSupabase();
+  if (!supabase) {
+    return { reachable: false, error: 'Supabase environment variables not configured.' };
+  }
+  try {
+    const probePromise = supabase
+      .from('pos_shops')
+      .select('owner_id', { count: 'exact', head: true })
+      .limit(1);
+    const timeoutPromise = new Promise<{ error: { message: string } }>((resolve) =>
+      setTimeout(() => resolve({ error: { message: 'Connection timed out' } }), 3500)
+    );
+    const result = await Promise.race([probePromise, timeoutPromise]);
+    if (result.error) {
+      return { reachable: false, error: result.error.message };
+    }
+    return { reachable: true, error: null };
+  } catch (err) {
+    return {
+      reachable: false,
+      error: err instanceof Error ? err.message : 'Unable to reach Supabase.',
+    };
+  }
+}
+
 export async function pushPosDataDirectToSupabase(
   payload: SupabaseSyncPayload
 ): Promise<{ ok: boolean; error?: string }> {

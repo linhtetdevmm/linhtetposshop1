@@ -46,13 +46,73 @@ async function startServer() {
 
   app.use(express.json({ limit: '10mb' }));
 
-  // Check configured server-side integrations without exposing secrets
-  app.get('/api/integrations/status', (_req, res) => {
+  let lastSupabaseProbe: {
+    reachable: boolean;
+    error: string | null;
+    checkedAt: number;
+  } | null = null;
+
+  async function probeSupabaseHealth(
+    url: string,
+    key: string,
+    force = false
+  ): Promise<{ reachable: boolean; error: string | null; checkedAt: string }> {
+    const now = Date.now();
+    if (!force && lastSupabaseProbe && now - lastSupabaseProbe.checkedAt < 15000) {
+      return {
+        reachable: lastSupabaseProbe.reachable,
+        error: lastSupabaseProbe.error,
+        checkedAt: new Date(lastSupabaseProbe.checkedAt).toISOString(),
+      };
+    }
+
+    try {
+      const supabase = createClient(url, key, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const probePromise = supabase
+        .from('pos_shops')
+        .select('owner_id', { count: 'exact', head: true })
+        .limit(1);
+      const timeoutPromise = new Promise<{ error: { message: string } }>((resolve) =>
+        setTimeout(() => resolve({ error: { message: 'Connection timed out' } }), 3500)
+      );
+      const result = await Promise.race([probePromise, timeoutPromise]);
+      const reachable = !result.error;
+      const errorMsg = result.error ? result.error.message : null;
+      lastSupabaseProbe = { reachable, error: errorMsg, checkedAt: now };
+      return { reachable, error: errorMsg, checkedAt: new Date(now).toISOString() };
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unable to reach Supabase';
+      lastSupabaseProbe = { reachable: false, error: errorMsg, checkedAt: now };
+      return { reachable: false, error: errorMsg, checkedAt: new Date(now).toISOString() };
+    }
+  }
+
+  // Check configured server-side integrations and backend health without exposing secrets
+  app.get('/api/integrations/status', async (req, res) => {
     const { token, chatId } = getTelegramConfig();
     const { url, key } = getSupabaseConfig();
+    const supabaseConfigured = Boolean(url && key);
+    const force = req.query.force === '1' || req.query.force === 'true';
+
+    let supabaseReachable: boolean | null = null;
+    let supabaseError: string | null = null;
+    let checkedAt = new Date().toISOString();
+
+    if (supabaseConfigured) {
+      const health = await probeSupabaseHealth(url, key, force);
+      supabaseReachable = health.reachable;
+      supabaseError = health.error;
+      checkedAt = health.checkedAt;
+    }
+
     res.json({
       telegramConfigured: Boolean(token && chatId),
-      supabaseConfigured: Boolean(url && key),
+      supabaseConfigured,
+      supabaseReachable,
+      supabaseError,
+      checkedAt,
     });
   });
 

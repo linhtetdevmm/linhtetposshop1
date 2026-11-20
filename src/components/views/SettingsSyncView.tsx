@@ -167,7 +167,9 @@ CREATE POLICY "allow_owner_sync_expenses" ON pos_expenses FOR ALL TO anon, authe
 CREATE POLICY "allow_owner_sync_deliveries" ON pos_deliveries FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 `;
 
-export const SettingsSyncView: React.FC = () => {
+export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'guide' }> = ({
+  initialTab = 'profile',
+}) => {
   const {
     shop,
     sales,
@@ -190,7 +192,11 @@ export const SettingsSyncView: React.FC = () => {
   } = usePos();
   const t = useT(lang);
 
-  const [tab, setTab] = useState<'profile' | 'cloud' | 'guide'>('profile');
+  const [tab, setTab] = useState<'profile' | 'cloud' | 'guide'>(initialTab);
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
 
   // Shop Settings Form
   const [shopName, setShopName] = useState(shop.shopName);

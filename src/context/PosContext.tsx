@@ -52,6 +52,7 @@ import {
 import { createSeedDataset } from '../data/seedData';
 import { generateDocId, generateVoucherNo, getTodayISO } from '../lib/format';
 import {
+  checkClientSupabaseHealth,
   isClientSupabaseConfigured,
   pullPosDataDirectFromSupabase,
   pushPosDataDirectToSupabase,
@@ -63,6 +64,17 @@ interface IntegrationStatus {
   telegramConfigured: boolean;
   supabaseConfigured: boolean;
   supabaseMode: 'server' | 'client' | 'none';
+}
+
+export type CloudHealthStatus = 'checking' | 'syncing' | 'healthy' | 'degraded' | 'error';
+
+export interface CloudHealthInfo {
+  status: CloudHealthStatus;
+  online: boolean;
+  supabaseReachable: boolean | null;
+  supabaseError: string | null;
+  lastCheckedAt: string | null;
+  lastSyncedAt: string | null;
 }
 
 interface ToastMessage {
@@ -82,6 +94,8 @@ interface PosContextValue {
   darkMode: boolean;
   toggleDarkMode: () => void;
   integrations: IntegrationStatus;
+  cloudHealth: CloudHealthInfo;
+  refreshCloudHealth: (force?: boolean) => Promise<void>;
   toast: ToastMessage | null;
   showToast: (text: string, type?: 'success' | 'error' | 'info') => void;
 
@@ -206,6 +220,15 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supabaseMode: clientSupa ? 'client' : 'none',
     };
   });
+  const [online, setOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  const [healthChecking, setHealthChecking] = useState<boolean>(true);
+  const [syncingSupabase, setSyncingSupabase] = useState<boolean>(false);
+  const [supabaseReachable, setSupabaseReachable] = useState<boolean | null>(null);
+  const [supabaseError, setSupabaseError] = useState<string | null>(null);
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   const initialLocal = useMemo(() => loadLocalData(), []);
@@ -256,41 +279,159 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [darkMode]);
 
-  // Fetch server-side integration availability (Telegram & Supabase) and merge with Web client fallback
-  useEffect(() => {
+  // Live backend & Supabase health probe (Server Proxy + Static Web Client Direct fallback)
+  const refreshCloudHealth = useCallback(async (force = false) => {
     const clientSupa = isClientSupabaseConfigured();
-    fetch('/api/integrations/status')
-      .then(async (r) => {
-        const contentType = r.headers.get('content-type') || '';
-        if (!r.ok || !contentType.includes('application/json')) return null;
-        return r.json();
-      })
-      .then((data) => {
-        if (data) {
-          const serverSupa = Boolean(data.supabaseConfigured);
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setOnline(false);
+      setHealthChecking(false);
+      setLastCheckedAt(new Date().toISOString());
+      return;
+    }
+
+    setHealthChecking(true);
+    try {
+      const url = force ? '/api/integrations/status?force=1' : '/api/integrations/status';
+      const r = await fetch(url);
+      const contentType = r.headers.get('content-type') || '';
+      if (r.ok && contentType.includes('application/json')) {
+        const data = (await r.json()) as {
+          telegramConfigured?: boolean;
+          supabaseConfigured?: boolean;
+          supabaseReachable?: boolean | null;
+          supabaseError?: string | null;
+          checkedAt?: string;
+        };
+        const serverSupa = Boolean(data.supabaseConfigured);
+        if (serverSupa) {
           setIntegrations({
             telegramConfigured: Boolean(data.telegramConfigured),
-            supabaseConfigured: serverSupa || clientSupa,
-            supabaseMode: serverSupa ? 'server' : clientSupa ? 'client' : 'none',
+            supabaseConfigured: true,
+            supabaseMode: 'server',
           });
-        } else if (clientSupa) {
-          setIntegrations((prev) => ({
-            ...prev,
-            supabaseConfigured: true,
-            supabaseMode: 'client',
-          }));
+          setSupabaseReachable(
+            typeof data.supabaseReachable === 'boolean' ? data.supabaseReachable : true
+          );
+          setSupabaseError(data.supabaseError || null);
+          setLastCheckedAt(data.checkedAt || new Date().toISOString());
+          return;
         }
-      })
-      .catch(() => {
+        // Server responded, but Supabase env is not set on server -> check static Web client keys
         if (clientSupa) {
-          setIntegrations((prev) => ({
-            ...prev,
+          const probe = await checkClientSupabaseHealth();
+          setIntegrations({
+            telegramConfigured: Boolean(data.telegramConfigured),
             supabaseConfigured: true,
             supabaseMode: 'client',
-          }));
+          });
+          setSupabaseReachable(probe.reachable);
+          setSupabaseError(probe.error);
+          setLastCheckedAt(new Date().toISOString());
+          return;
         }
-      });
+        setIntegrations({
+          telegramConfigured: Boolean(data.telegramConfigured),
+          supabaseConfigured: false,
+          supabaseMode: 'none',
+        });
+        setSupabaseReachable(null);
+        setSupabaseError(null);
+        setLastCheckedAt(data.checkedAt || new Date().toISOString());
+        return;
+      }
+
+      // Static Web host (no Express /api route)
+      if (clientSupa) {
+        const probe = await checkClientSupabaseHealth();
+        setIntegrations((prev) => ({
+          ...prev,
+          supabaseConfigured: true,
+          supabaseMode: 'client',
+        }));
+        setSupabaseReachable(probe.reachable);
+        setSupabaseError(probe.error);
+      } else {
+        setIntegrations((prev) => ({
+          ...prev,
+          supabaseConfigured: false,
+          supabaseMode: 'none',
+        }));
+        setSupabaseReachable(null);
+        setSupabaseError(null);
+      }
+      setLastCheckedAt(new Date().toISOString());
+    } catch {
+      if (clientSupa) {
+        const probe = await checkClientSupabaseHealth();
+        setIntegrations((prev) => ({
+          ...prev,
+          supabaseConfigured: true,
+          supabaseMode: 'client',
+        }));
+        setSupabaseReachable(probe.reachable);
+        setSupabaseError(probe.error);
+      }
+      setLastCheckedAt(new Date().toISOString());
+    } finally {
+      setHealthChecking(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void refreshCloudHealth(false);
+    const handleOnline = () => {
+      setOnline(true);
+      void refreshCloudHealth(true);
+    };
+    const handleOffline = () => {
+      setOnline(false);
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [refreshCloudHealth]);
+
+  const cloudHealth: CloudHealthInfo = useMemo(() => {
+    let status: CloudHealthStatus;
+    if (!online) {
+      status = 'error';
+    } else if (syncingSupabase) {
+      status = 'syncing';
+    } else if (healthChecking) {
+      status = 'checking';
+    } else if (integrations.supabaseConfigured && supabaseReachable === false) {
+      status = 'error';
+    } else if (
+      (integrations.supabaseConfigured && supabaseReachable === true) ||
+      isCloudMode
+    ) {
+      status = 'healthy';
+    } else {
+      status = 'degraded';
+    }
+
+    return {
+      status,
+      online,
+      supabaseReachable,
+      supabaseError,
+      lastCheckedAt,
+      lastSyncedAt,
+    };
+  }, [
+    online,
+    syncingSupabase,
+    healthChecking,
+    integrations.supabaseConfigured,
+    supabaseReachable,
+    supabaseError,
+    isCloudMode,
+    lastCheckedAt,
+    lastSyncedAt,
+  ]);
 
   // Persist local demo state when not signed in
   useEffect(() => {
@@ -1629,30 +1770,46 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deliveries,
     };
 
+    const markSuccess = () => {
+      const now = new Date().toISOString();
+      setSupabaseReachable(true);
+      setSupabaseError(null);
+      setLastCheckedAt(now);
+      setLastSyncedAt(now);
+    };
+
+    const markFailure = (errText: string) => {
+      setSupabaseReachable(false);
+      setSupabaseError(errText);
+      setLastCheckedAt(new Date().toISOString());
+    };
+
     const tryDirectClientSync = async (): Promise<boolean> => {
       const direct = await pushPosDataDirectToSupabase(payload);
       if (!direct.ok) {
-        showToast(
+        const msg =
           direct.error ||
-            (lang === 'my'
-              ? 'SUPABASE_URL နှင့် SUPABASE_ANON_KEY (သို့) VITE_SUPABASE_* ကို Environment Variables တွင် ထည့်သွင်းပေးပါ။'
-              : 'Configure SUPABASE_URL & SUPABASE_ANON_KEY (or VITE_SUPABASE_*) in environment variables.'),
-          'error'
-        );
+          (lang === 'my'
+            ? 'SUPABASE_URL နှင့် SUPABASE_ANON_KEY (သို့) VITE_SUPABASE_* ကို Environment Variables တွင် ထည့်သွင်းပေးပါ။'
+            : 'Configure SUPABASE_URL & SUPABASE_ANON_KEY (or VITE_SUPABASE_*) in environment variables.');
+        markFailure(msg);
+        showToast(msg, 'error');
         return false;
       }
+      markSuccess();
       showToast(
         lang === 'my' ? 'Supabase PostgreSQL သို့ Sync တင်ပြီးပါပြီ။' : 'Synced all POS data to Supabase.'
       );
       return true;
     };
 
-    // If running on static Web hosting (Vercel / Netlify / Electron) with client keys, sync directly
-    if (integrations.supabaseMode === 'client') {
-      return tryDirectClientSync();
-    }
-
+    setSyncingSupabase(true);
     try {
+      // If running on static Web hosting (Vercel / Netlify / Electron) with client keys, sync directly
+      if (integrations.supabaseMode === 'client') {
+        return await tryDirectClientSync();
+      }
+
       const res = await fetch('/api/supabase/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1660,38 +1817,41 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
-        if (isClientSupabaseConfigured()) return tryDirectClientSync();
+        if (isClientSupabaseConfigured()) return await tryDirectClientSync();
         throw new Error('Server API route not available on static hosting.');
       }
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || !data.ok) {
         if (res.status === 400 && isClientSupabaseConfigured()) {
-          return tryDirectClientSync();
+          return await tryDirectClientSync();
         }
-        showToast(
+        const msg =
           data.error ||
-            (lang === 'my'
-              ? 'SUPABASE_URL နှင့် SUPABASE_ANON_KEY ကို Server Env တွင် ထည့်သွင်းပေးပါ။'
-              : 'Configure SUPABASE_URL & SUPABASE_ANON_KEY in server secrets.'),
-          'error'
-        );
+          (lang === 'my'
+            ? 'SUPABASE_URL နှင့် SUPABASE_ANON_KEY ကို Server Env တွင် ထည့်သွင်းပေးပါ။'
+            : 'Configure SUPABASE_URL & SUPABASE_ANON_KEY in server secrets.');
+        markFailure(msg);
+        showToast(msg, 'error');
         return false;
       }
+      markSuccess();
       showToast(
         lang === 'my' ? 'Supabase PostgreSQL သို့ Sync တင်ပြီးပါပြီ။' : 'Synced all POS data to Supabase.'
       );
       return true;
     } catch {
       if (isClientSupabaseConfigured()) {
-        return tryDirectClientSync();
+        return await tryDirectClientSync();
       }
-      showToast(
+      const msg =
         lang === 'my'
           ? 'Supabase Sync မအောင်မြင်ပါ။ Web Deploy တွင် VITE_SUPABASE_URL နှင့် VITE_SUPABASE_ANON_KEY ထည့်ပြီး Redeploy လုပ်ပါ။'
-          : 'Supabase sync failed. For static Web deploys, add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY and redeploy.',
-        'error'
-      );
+          : 'Supabase sync failed. For static Web deploys, add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY and redeploy.';
+      markFailure(msg);
+      showToast(msg, 'error');
       return false;
+    } finally {
+      setSyncingSupabase(false);
     }
   }, [
     user,
@@ -1711,12 +1871,29 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const pullFromSupabase = useCallback(async (): Promise<boolean> => {
     const ownerId = user?.uid || 'local_demo';
 
+    const markSuccess = () => {
+      const now = new Date().toISOString();
+      setSupabaseReachable(true);
+      setSupabaseError(null);
+      setLastCheckedAt(now);
+      setLastSyncedAt(now);
+    };
+
+    const markFailure = (errText: string) => {
+      setSupabaseReachable(false);
+      setSupabaseError(errText);
+      setLastCheckedAt(new Date().toISOString());
+    };
+
     const tryDirectClientPull = async (): Promise<boolean> => {
       const direct = await pullPosDataDirectFromSupabase(ownerId);
       if (!direct.ok || !direct.data) {
-        showToast(direct.error || 'Supabase pull failed.', 'error');
+        const msg = direct.error || 'Supabase pull failed.';
+        markFailure(msg);
+        showToast(msg, 'error');
         return false;
       }
+      markSuccess();
       if (!direct.data.shop) {
         showToast(
           lang === 'my' ? 'Supabase တွင် ဒေတာမရှိသေးပါ။' : 'No records found in Supabase for this account.',
@@ -1728,11 +1905,12 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return true;
     };
 
-    if (integrations.supabaseMode === 'client') {
-      return tryDirectClientPull();
-    }
-
+    setSyncingSupabase(true);
     try {
+      if (integrations.supabaseMode === 'client') {
+        return await tryDirectClientPull();
+      }
+
       const res = await fetch('/api/supabase/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1740,7 +1918,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
-        if (isClientSupabaseConfigured()) return tryDirectClientPull();
+        if (isClientSupabaseConfigured()) return await tryDirectClientPull();
         throw new Error('Server API route not available on static hosting.');
       }
       const payload = (await res.json()) as {
@@ -1750,11 +1928,14 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       if (!res.ok || !payload.ok || !payload.data) {
         if (res.status === 400 && isClientSupabaseConfigured()) {
-          return tryDirectClientPull();
+          return await tryDirectClientPull();
         }
-        showToast(payload.error || 'Supabase pull failed.', 'error');
+        const msg = payload.error || 'Supabase pull failed.';
+        markFailure(msg);
+        showToast(msg, 'error');
         return false;
       }
+      markSuccess();
       if (!payload.data.shop) {
         showToast(
           lang === 'my' ? 'Supabase တွင် ဒေတာမရှိသေးပါ။' : 'No records found in Supabase for this account.',
@@ -1766,10 +1947,14 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return true;
     } catch {
       if (isClientSupabaseConfigured()) {
-        return tryDirectClientPull();
+        return await tryDirectClientPull();
       }
-      showToast(lang === 'my' ? 'Supabase မှ ဆွဲယူမှု မအောင်မြင်ပါ။' : 'Supabase pull failed.', 'error');
+      const msg = lang === 'my' ? 'Supabase မှ ဆွဲယူမှု မအောင်မြင်ပါ။' : 'Supabase pull failed.';
+      markFailure(msg);
+      showToast(msg, 'error');
       return false;
+    } finally {
+      setSyncingSupabase(false);
     }
   }, [user, restoreBackupJson, integrations.supabaseMode, lang, showToast]);
 
@@ -1784,6 +1969,8 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     darkMode,
     toggleDarkMode,
     integrations,
+    cloudHealth,
+    refreshCloudHealth,
     toast,
     showToast,
     shop,

@@ -24,6 +24,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { PosProvider, usePos } from './context/PosContext';
 import { useT } from './i18n/translations';
 import { VoucherModal } from './components/VoucherModal';
+import { ConnectionStatusBadge } from './components/ConnectionStatusBadge';
 import { DashboardView } from './components/views/DashboardView';
 import { PosSalesView } from './components/views/PosSalesView';
 import { ProductsView } from './components/views/ProductsView';
@@ -52,6 +53,7 @@ function PosShell() {
   const t = useT(lang);
 
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
+  const [settingsTab, setSettingsTab] = useState<'profile' | 'cloud' | 'guide'>('profile');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [voucherSale, setVoucherSale] = useState<Sale | null>(null);
 
@@ -265,6 +267,12 @@ function PosShell() {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
+            <ConnectionStatusBadge
+              onOpenSettings={() => {
+                setSettingsTab('cloud');
+                setActiveTab('settings');
+              }}
+            />
             <button
               onClick={() => setActiveTab('pos')}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors whitespace-nowrap shrink-0"
@@ -293,7 +301,7 @@ function PosShell() {
           {activeTab === 'expenses' && <ExpensesView />}
           {activeTab === 'delivery' && <DeliveryView />}
           {activeTab === 'reports' && <ReportsView />}
-          {activeTab === 'settings' && <SettingsSyncView />}
+          {activeTab === 'settings' && <SettingsSyncView initialTab={settingsTab} />}
         </main>
       </div>
 
