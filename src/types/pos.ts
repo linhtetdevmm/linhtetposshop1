@@ -10,7 +10,46 @@ export type NavTab =
   | 'expenses'
   | 'delivery'
   | 'reports'
-  | 'settings';
+  | 'settings'
+  | 'admin';
+
+export type AccessGateStatus =
+  | 'loading'
+  | 'unauthenticated'
+  | 'needs_pass'
+  | 'expired'
+  | 'revoked'
+  | 'device_limit'
+  | 'granted';
+
+export interface AccessPass {
+  code: string;
+  label: string;
+  note: string;
+  status: 'active' | 'revoked';
+  durationDays: number;
+  expiresAtMs: number;
+  maxDevices: number;
+  boundDevices: string[];
+  assignedUid: string;
+  assignedEmail: string;
+  createdBy: string;
+  createdAtMs?: number;
+  updatedAtMs?: number;
+}
+
+export interface UserLicense {
+  userId: string;
+  email: string;
+  displayName: string;
+  passCode: string;
+  label: string;
+  status: 'active' | 'revoked';
+  expiresAtMs: number;
+  maxDevices: number;
+  createdAtMs?: number;
+  updatedAtMs?: number;
+}
 
 export type PaymentMethod = 'cash' | 'kbzpay' | 'wavepay' | 'credit';
 

@@ -13,6 +13,7 @@ import {
   Plus,
   Receipt,
   Settings,
+  Shield,
   ShoppingBag,
   ShoppingCart,
   Sun,
@@ -23,8 +24,10 @@ import type { NavTab, Sale } from './types/pos';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PosProvider, usePos } from './context/PosContext';
 import { useT } from './i18n/translations';
+import { formatExpiryDate, getRemainingDays } from './lib/accessControl';
 import { VoucherModal } from './components/VoucherModal';
 import { ConnectionStatusBadge } from './components/ConnectionStatusBadge';
+import { AccessGateScreen } from './components/AccessGateScreen';
 import { DashboardView } from './components/views/DashboardView';
 import { PosSalesView } from './components/views/PosSalesView';
 import { ProductsView } from './components/views/ProductsView';
@@ -35,6 +38,7 @@ import { ExpensesView } from './components/views/ExpensesView';
 import { DeliveryView } from './components/views/DeliveryView';
 import { ReportsView } from './components/views/ReportsView';
 import { SettingsSyncView } from './components/views/SettingsSyncView';
+import { AdminAccessView } from './components/views/AdminAccessView';
 
 function PosShell() {
   const {
@@ -45,6 +49,12 @@ function PosShell() {
     toggleDarkMode,
     user,
     signingIn,
+    isAdmin,
+    accessStatus,
+    activeLicense,
+    adminTargetShopId,
+    adminTargetShopLabel,
+    adminSelectShop,
     isCloudMode,
     loginWithGoogle,
     logout,
@@ -57,6 +67,11 @@ function PosShell() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [voucherSale, setVoucherSale] = useState<Sale | null>(null);
 
+  // Strict Access Gate: unauthorized or expired visitors cannot enter the POS shell
+  if (accessStatus !== 'granted') {
+    return <AccessGateScreen />;
+  }
+
   const navItems: { id: NavTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: 'dashboard', label: t('navDashboard'), icon: LayoutDashboard },
     { id: 'pos', label: t('navPos'), icon: ShoppingCart },
@@ -68,9 +83,19 @@ function PosShell() {
     { id: 'delivery', label: t('navDelivery'), icon: Truck },
     { id: 'reports', label: t('navReports'), icon: BarChart3 },
     { id: 'settings', label: t('navSettings'), icon: Settings },
+    ...(isAdmin
+      ? [
+          {
+            id: 'admin' as NavTab,
+            label: lang === 'my' ? 'Admin ဝင်ခွင့်စီမံမှု' : 'Admin Access',
+            icon: Shield,
+          },
+        ]
+      : []),
   ];
 
   const currentNav = navItems.find((n) => n.id === activeTab) || navItems[0];
+  const remainingDays = activeLicense ? getRemainingDays(activeLicense.expiresAtMs) : null;
 
   const handleSelectNav = (id: NavTab) => {
     setActiveTab(id);
@@ -88,7 +113,17 @@ function PosShell() {
               {shop.shopName}
             </div>
             <div className="text-[11px] text-titanium-500 dark:text-titanium-400 truncate">
-              {isCloudMode ? t('cloudSynced') : t('localDemoMode')} · MMK
+              {isAdmin
+                ? lang === 'my'
+                  ? 'Super Admin · MMK'
+                  : 'Super Admin · MMK'
+                : remainingDays !== null
+                ? lang === 'my'
+                  ? `${remainingDays} ရက်ကျန် (${formatExpiryDate(activeLicense!.expiresAtMs)})`
+                  : `${remainingDays}d left (${formatExpiryDate(activeLicense!.expiresAtMs)})`
+                : isCloudMode
+                ? `${t('cloudSynced')} · MMK`
+                : `${t('localDemoMode')} · MMK`}
             </div>
           </div>
         </div>
@@ -283,6 +318,30 @@ function PosShell() {
           </div>
         </header>
 
+        {/* Admin Remote Shop Management Banner */}
+        {isAdmin && adminTargetShopId && (
+          <div className="bg-burgundy-800 dark:bg-burgundy-900 text-white px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <Shield className="w-4 h-4 shrink-0" />
+              <span className="truncate">
+                {lang === 'my'
+                  ? `Admin Edit Mode: လက်ရှိ "${adminTargetShopLabel || shop.shopName}" ၏ ဒေတာများကို တိုက်ရိုက်ပြင်ဆင်နေပါသည်`
+                  : `Admin Edit Mode: Managing "${adminTargetShopLabel || shop.shopName}"`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                adminSelectShop(null, '');
+                setActiveTab('admin');
+              }}
+              className="px-3 py-1 bg-white/15 hover:bg-white/25 rounded-md font-semibold transition-colors whitespace-nowrap"
+            >
+              {lang === 'my' ? 'Admin Panel သို့ ပြန်မည်' : 'Return to Admin Shop'}
+            </button>
+          </div>
+        )}
+
         {/* Active View Viewport */}
         <main className="flex-1 p-4 sm:p-6 max-w-[1440px] w-full mx-auto">
           {activeTab === 'dashboard' && (
@@ -302,6 +361,7 @@ function PosShell() {
           {activeTab === 'delivery' && <DeliveryView />}
           {activeTab === 'reports' && <ReportsView />}
           {activeTab === 'settings' && <SettingsSyncView initialTab={settingsTab} />}
+          {activeTab === 'admin' && isAdmin && <AdminAccessView onNavigate={setActiveTab} />}
         </main>
       </div>
 

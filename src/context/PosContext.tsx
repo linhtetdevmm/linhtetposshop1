@@ -13,10 +13,12 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocFromServer,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
   where,
   writeBatch,
@@ -34,6 +36,8 @@ import {
   clampString,
   sanitizeDate,
   sanitizeId,
+  type AccessGateStatus,
+  type AccessPass,
   type Debt,
   type Delivery,
   type DeliveryStatus,
@@ -48,9 +52,16 @@ import {
   type SaleItem,
   type ShopSettings,
   type StockLog,
+  type UserLicense,
 } from '../types/pos';
 import { createSeedDataset } from '../data/seedData';
 import { generateDocId, generateVoucherNo, getTodayISO } from '../lib/format';
+import {
+  getOrCreateDeviceId,
+  isPrimaryAdminEmail,
+  normalizePassCode,
+  timestampToMs,
+} from '../lib/accessControl';
 import {
   checkClientSupabaseHealth,
   isClientSupabaseConfigured,
@@ -87,6 +98,15 @@ interface PosContextValue {
   user: User | null;
   authReady: boolean;
   signingIn: boolean;
+  isAdmin: boolean;
+  accessStatus: AccessGateStatus;
+  activeLicense: UserLicense | null;
+  activePass: AccessPass | null;
+  activeShopId: string;
+  adminTargetShopId: string | null;
+  adminTargetShopLabel: string;
+  adminSelectShop: (shopId: string | null, label?: string) => void;
+  redeemAccessPass: (code: string) => Promise<{ ok: boolean; error?: string }>;
   isCloudMode: boolean;
   loadingData: boolean;
   lang: Language;
@@ -244,7 +264,34 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [signingIn, setSigningIn] = useState(false);
   const signingInRef = useRef(false);
   const shopDocReadyRef = useRef<string | null>(null);
+  const [isSecondaryAdmin, setIsSecondaryAdmin] = useState(false);
+  const [licenseReady, setLicenseReady] = useState(false);
+  const [activeLicense, setActiveLicense] = useState<UserLicense | null>(null);
+  const [activePass, setActivePass] = useState<AccessPass | null>(null);
+  const [clockTick, setClockTick] = useState<number>(() => Date.now());
+  const [adminTargetShopId, setAdminTargetShopId] = useState<string | null>(null);
+  const [adminTargetShopLabel, setAdminTargetShopLabel] = useState<string>('');
+  const deviceId = useMemo(() => getOrCreateDeviceId(), []);
+
+  const isAdmin = Boolean(user && (isPrimaryAdminEmail(user.email) || isSecondaryAdmin));
+  const activeShopId = isAdmin && adminTargetShopId ? adminTargetShopId : user?.uid || 'local_demo';
   const isCloudMode = Boolean(authReady && user);
+
+  const adminSelectShop = useCallback(
+    (shopId: string | null, label = '') => {
+      if (!isAdmin) return;
+      shopDocReadyRef.current = null;
+      setAdminTargetShopId(shopId);
+      setAdminTargetShopLabel(label);
+    },
+    [isAdmin]
+  );
+
+  // Periodic 30-second clock tick so expired passes lock automatically while app stays open
+  useEffect(() => {
+    const id = window.setInterval(() => setClockTick(Date.now()), 30000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const showToast = useCallback(
     (text: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -490,6 +537,12 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAuthReady(true);
       if (!firebaseUser) {
         shopDocReadyRef.current = null;
+        setIsSecondaryAdmin(false);
+        setActiveLicense(null);
+        setActivePass(null);
+        setLicenseReady(true);
+        setAdminTargetShopId(null);
+        setAdminTargetShopLabel('');
         const local = loadLocalData();
         setShop(local.shop);
         setProducts(local.products);
@@ -499,21 +552,306 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setDebts(local.debts);
         setExpenses(local.expenses);
         setDeliveries(local.deliveries);
+      } else {
+        setLicenseReady(false);
       }
     });
     return () => unsub();
   }, []);
 
-  // Firestore real-time listeners (strictly gated on authReady && user)
+  // Check optional secondary admin record (/admins/{uid}) for non-primary emails
+  useEffect(() => {
+    if (!authReady || !user) {
+      setIsSecondaryAdmin(false);
+      return;
+    }
+    if (isPrimaryAdminEmail(user.email)) {
+      setIsSecondaryAdmin(true);
+      return;
+    }
+    let cancelled = false;
+    getDoc(doc(db, 'admins', user.uid))
+      .then((snap) => {
+        if (!cancelled) setIsSecondaryAdmin(snap.exists());
+      })
+      .catch(() => {
+        if (!cancelled) setIsSecondaryAdmin(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, user]);
+
+  // Real-time license & pass enforcement for regular Gmail users
   useEffect(() => {
     if (!authReady || !user) return;
+    if (isAdmin) {
+      setLicenseReady(true);
+      return;
+    }
+
+    setLicenseReady(false);
+    let passUnsub: (() => void) | null = null;
+
+    const licenseUnsub = onSnapshot(
+      doc(db, 'userLicenses', user.uid),
+      (snap) => {
+        if (passUnsub) {
+          passUnsub();
+          passUnsub = null;
+        }
+        if (!snap.exists()) {
+          setActiveLicense(null);
+          setActivePass(null);
+          setLicenseReady(true);
+          return;
+        }
+        const d = snap.data();
+        const lic: UserLicense = {
+          userId: String(d.userId || user.uid),
+          email: String(d.email || user.email || ''),
+          displayName: String(d.displayName || ''),
+          passCode: String(d.passCode || ''),
+          label: String(d.label || ''),
+          status: d.status === 'revoked' ? 'revoked' : 'active',
+          expiresAtMs: timestampToMs(d.expiresAt),
+          maxDevices: Number(d.maxDevices || 1),
+          createdAtMs: timestampToMs(d.createdAt),
+          updatedAtMs: timestampToMs(d.updatedAt),
+        };
+        setActiveLicense(lic);
+
+        if (!lic.passCode) {
+          setActivePass(null);
+          setLicenseReady(true);
+          return;
+        }
+
+        passUnsub = onSnapshot(
+          doc(db, 'accessPasses', lic.passCode),
+          (passSnap) => {
+            if (!passSnap.exists()) {
+              setActivePass(null);
+            } else {
+              const p = passSnap.data();
+              setActivePass({
+                code: String(p.code || lic.passCode),
+                label: String(p.label || lic.label),
+                note: String(p.note || ''),
+                status: p.status === 'revoked' ? 'revoked' : 'active',
+                durationDays: Number(p.durationDays || 30),
+                expiresAtMs: timestampToMs(p.expiresAt),
+                maxDevices: Number(p.maxDevices || 1),
+                boundDevices: Array.isArray(p.boundDevices) ? p.boundDevices.map(String) : [],
+                assignedUid: String(p.assignedUid || ''),
+                assignedEmail: String(p.assignedEmail || ''),
+                createdBy: String(p.createdBy || ''),
+                createdAtMs: timestampToMs(p.createdAt),
+                updatedAtMs: timestampToMs(p.updatedAt),
+              });
+            }
+            setLicenseReady(true);
+          },
+          () => {
+            setActivePass(null);
+            setLicenseReady(true);
+          }
+        );
+      },
+      () => {
+        setActiveLicense(null);
+        setActivePass(null);
+        setLicenseReady(true);
+      }
+    );
+
+    return () => {
+      licenseUnsub();
+      if (passUnsub) passUnsub();
+    };
+  }, [authReady, user, isAdmin]);
+
+  // Compute strict Access Gate status
+  const accessStatus: AccessGateStatus = useMemo(() => {
+    if (!authReady) return 'loading';
+    if (!user) return 'unauthenticated';
+    if (isAdmin) return 'granted';
+    if (!licenseReady) return 'loading';
+    if (!activeLicense || !activePass) return 'needs_pass';
+    if (activeLicense.status === 'revoked' || activePass.status === 'revoked') return 'revoked';
+    const effectiveExpiry = Math.min(activeLicense.expiresAtMs || 0, activePass.expiresAtMs || 0);
+    if (!effectiveExpiry || effectiveExpiry <= clockTick) return 'expired';
+    if (activePass.assignedUid && activePass.assignedUid !== user.uid) return 'revoked';
+    if (
+      activePass.boundDevices.length >= activePass.maxDevices &&
+      !activePass.boundDevices.includes(deviceId)
+    ) {
+      return 'device_limit';
+    }
+    return 'granted';
+  }, [authReady, user, isAdmin, licenseReady, activeLicense, activePass, clockTick, deviceId]);
+
+  // Atomic Pass Redemption (verifies live Firestore server doc, binds Gmail + deviceId)
+  const redeemAccessPass = useCallback(
+    async (rawCode: string): Promise<{ ok: boolean; error?: string }> => {
+      if (!user) {
+        return {
+          ok: false,
+          error: lang === 'my' ? 'Google Account ဖြင့် အရင်ဝင်ပေးပါ။' : 'Please sign in with Google first.',
+        };
+      }
+      const code = normalizePassCode(rawCode);
+      if (code.length < 6) {
+        return {
+          ok: false,
+          error: lang === 'my' ? 'Access Pass ပုံစံ မမှန်ကန်ပါ။' : 'Invalid Access Pass format.',
+        };
+      }
+
+      try {
+        const passRef = doc(db, 'accessPasses', code);
+        const snap = await getDocFromServer(passRef);
+        if (!snap.exists()) {
+          return {
+            ok: false,
+            error:
+              lang === 'my'
+                ? 'ဤ Access Pass မရှိပါ။ Admin ထံမှ မှန်ကန်သော Pass ကို စစ်ဆေးပါ။'
+                : 'Access Pass not found. Please check your code with Admin.',
+          };
+        }
+
+        const p = snap.data();
+        if (p.status !== 'active') {
+          return {
+            ok: false,
+            error:
+              lang === 'my'
+                ? 'ဤ Pass ကို Admin မှ ပိတ်ထားပြီးဖြစ်ပါသည်။'
+                : 'This Access Pass has been revoked by Admin.',
+          };
+        }
+
+        const expiresAtMs = timestampToMs(p.expiresAt);
+        if (!expiresAtMs || expiresAtMs <= Date.now()) {
+          return {
+            ok: false,
+            error:
+              lang === 'my'
+                ? 'ဤ Pass သည် သက်တမ်းကုန်ဆုံးသွားပြီးဖြစ်ပါသည်။'
+                : 'This Access Pass has already expired.',
+          };
+        }
+
+        const existingAssignedUid = typeof p.assignedUid === 'string' ? p.assignedUid : '';
+        if (existingAssignedUid && existingAssignedUid !== user.uid) {
+          return {
+            ok: false,
+            error:
+              lang === 'my'
+                ? 'ဤ Pass ကို အခြား Gmail အကောင့်တစ်ခုတွင် အသုံးပြုပြီးဖြစ်ပါသည်။'
+                : 'This Access Pass is already bound to another Gmail account.',
+          };
+        }
+
+        const maxDevices = Number(p.maxDevices || 1);
+        const existingDevices: string[] = Array.isArray(p.boundDevices)
+          ? p.boundDevices.map(String)
+          : [];
+        const nextDevices = existingDevices.includes(deviceId)
+          ? existingDevices
+          : [...existingDevices, deviceId];
+
+        if (nextDevices.length > maxDevices) {
+          return {
+            ok: false,
+            error:
+              lang === 'my'
+                ? `စက်အရေအတွက် (${maxDevices} လုံး) ပြည့်နေပါပြီ။ Admin ထံတွင် Device Reset တောင်းပါ။`
+                : `Device limit (${maxDevices}) reached. Ask Admin to reset devices.`,
+          };
+        }
+
+        const licRef = doc(db, 'userLicenses', user.uid);
+        const existingLic = await getDoc(licRef);
+        const batch = writeBatch(db);
+
+        batch.update(passRef, {
+          assignedUid: user.uid,
+          assignedEmail: clampString(user.email || '', 160),
+          boundDevices: nextDevices,
+          updatedAt: serverTimestamp(),
+        });
+
+        const expiresTs =
+          p.expiresAt instanceof Timestamp ? p.expiresAt : Timestamp.fromMillis(expiresAtMs);
+
+        if (existingLic.exists()) {
+          batch.update(licRef, {
+            passCode: code,
+            label: clampString(p.label, 120, 'Licensed Shop'),
+            status: 'active',
+            expiresAt: expiresTs,
+            maxDevices,
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          batch.set(licRef, {
+            userId: user.uid,
+            email: clampString(user.email || '', 160),
+            displayName: clampString(user.displayName || '', 120),
+            passCode: code,
+            label: clampString(p.label, 120, 'Licensed Shop'),
+            status: 'active',
+            expiresAt: expiresTs,
+            maxDevices,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+
+        await batch.commit();
+        showToast(
+          lang === 'my'
+            ? 'Access Pass အတည်ပြုပြီးပါပြီ။ ကြိုဆိုပါသည်!'
+            : 'Access Pass activated! Welcome to ShwePOS.'
+        );
+        return { ok: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        if (msg.toLowerCase().includes('permission')) {
+          return {
+            ok: false,
+            error:
+              lang === 'my'
+                ? 'ဤ Pass သည် အခြားသူအသုံးပြုပြီး သို့မဟုတ် သက်တမ်းကုန်ဆုံးသွားပြီး ဖြစ်နိုင်ပါသည်။'
+                : 'Pass is already claimed by another Gmail account, expired, or invalid.',
+          };
+        }
+        return {
+          ok: false,
+          error:
+            msg ||
+            (lang === 'my' ? 'Pass စစ်ဆေးမှု မအောင်မြင်ပါ။' : 'Failed to verify Access Pass.'),
+        };
+      }
+    },
+    [user, deviceId, lang, showToast]
+  );
+
+  // Firestore real-time listeners (strictly gated on authReady && user && accessStatus === 'granted')
+  useEffect(() => {
+    if (!authReady || !user || accessStatus !== 'granted') return;
     let active = true;
-    const uid = user.uid;
+    const uid = activeShopId;
     setLoadingData(true);
 
     const unsubscribers: (() => void)[] = [];
 
-    ensureShopDoc(uid, user.displayName)
+    const initShop =
+      uid === user.uid ? ensureShopDoc(uid, user.displayName) : Promise.resolve();
+
+    initShop
       .then(() => {
         if (!active) return;
 
@@ -576,7 +914,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       active = false;
       unsubscribers.forEach((fn) => fn());
     };
-  }, [authReady, user, ensureShopDoc]);
+  }, [authReady, user, accessStatus, activeShopId, ensureShopDoc]);
 
   const loginWithGoogle = useCallback(async () => {
     if (signingInRef.current) return;
@@ -586,8 +924,8 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await signInWithGoogle();
       showToast(
         lang === 'my'
-          ? 'Google အကောင့်ဖြင့် ဝင်ရောက်ပြီး Firebase Cloud ချိတ်ဆက်ပြီးပါပြီ။'
-          : 'Signed in with Google. Firebase Cloud sync active.'
+          ? 'Google အကောင့်ဖြင့် ဝင်ရောက်ပြီးပါပြီ။'
+          : 'Signed in with Google.'
       );
     } catch (err) {
       const code = (err as { code?: string })?.code;
@@ -617,12 +955,14 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [lang, showToast]);
 
   const logout = useCallback(async () => {
+    setAdminTargetShopId(null);
+    setAdminTargetShopLabel('');
     await signOutUser();
     showToast(lang === 'my' ? 'အကောင့်မှ ထွက်လိုက်ပါပြီ။' : 'Signed out.', 'info');
   }, [lang, showToast]);
 
   const seedCloudWithSampleData = useCallback(async () => {
-    const uid = user?.uid || 'local_demo';
+    const uid = activeShopId;
     const sample = createSeedDataset(uid);
 
     if (!user) {
@@ -724,7 +1064,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `shops/${uid}`);
     }
-  }, [user, ensureShopDoc, lang, showToast]);
+  }, [user, activeShopId, ensureShopDoc, lang, showToast]);
 
   // ---------------------------------------------------------------------------
   // 1. Shop Settings
@@ -751,10 +1091,12 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return;
       }
 
-      const path = `shops/${user.uid}`;
+      const path = `shops/${activeShopId}`;
       try {
-        await ensureShopDoc(user.uid, user.displayName);
-        await updateDoc(doc(db, 'shops', user.uid), {
+        if (activeShopId === user.uid) {
+          await ensureShopDoc(activeShopId, user.displayName);
+        }
+        await updateDoc(doc(db, 'shops', activeShopId), {
           ...sanitized,
           updatedAt: serverTimestamp(),
         });
@@ -763,7 +1105,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
     },
-    [user, shop, ensureShopDoc, lang, showToast]
+    [user, activeShopId, shop, ensureShopDoc, lang, showToast]
   );
 
   // ---------------------------------------------------------------------------
@@ -774,7 +1116,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       input: Omit<Product, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>,
       existingId?: string
     ) => {
-      const uid = user?.uid || 'local_demo';
+      const uid = activeShopId;
       const id = sanitizeId(existingId || generateDocId('prod'));
       const data = {
         sku: clampString(input.sku, 64, `SKU-${Date.now().toString().slice(-4)}`),
@@ -820,7 +1162,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(error, existingId ? OperationType.UPDATE : OperationType.CREATE, path);
       }
     },
-    [user, ensureShopDoc, lang, showToast]
+    [user, activeShopId, ensureShopDoc, lang, showToast]
   );
 
   const deleteProduct = useCallback(
@@ -830,15 +1172,15 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'ပစ္စည်းဖျက်ပြီးပါပြီ။' : 'Product deleted.', 'info');
         return;
       }
-      const path = `shops/${user.uid}/products/${id}`;
+      const path = `shops/${activeShopId}/products/${id}`;
       try {
-        await deleteDoc(doc(db, 'shops', user.uid, 'products', sanitizeId(id)));
+        await deleteDoc(doc(db, 'shops', activeShopId, 'products', sanitizeId(id)));
         showToast(lang === 'my' ? 'ပစ္စည်းဖျက်ပြီးပါပြီ။' : 'Product deleted.', 'info');
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [user, lang, showToast]
+    [user, activeShopId, lang, showToast]
   );
 
   // ---------------------------------------------------------------------------
@@ -859,7 +1201,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deliveryFee: number;
       };
     }): Promise<Sale> => {
-      const uid = user?.uid || 'local_demo';
+      const uid = activeShopId;
       const saleId = sanitizeId(generateDocId('sale'));
       const voucherNo = generateVoucherNo('INV');
       const today = getTodayISO();
@@ -1062,7 +1404,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(error, OperationType.CREATE, path);
       }
     },
-    [user, products, ensureShopDoc, lang, showToast]
+    [user, activeShopId, products, ensureShopDoc, lang, showToast]
   );
 
   const deleteSale = useCallback(
@@ -1072,15 +1414,15 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'အရောင်းမှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Sale deleted.', 'info');
         return;
       }
-      const path = `shops/${user.uid}/sales/${id}`;
+      const path = `shops/${activeShopId}/sales/${id}`;
       try {
-        await deleteDoc(doc(db, 'shops', user.uid, 'sales', sanitizeId(id)));
+        await deleteDoc(doc(db, 'shops', activeShopId, 'sales', sanitizeId(id)));
         showToast(lang === 'my' ? 'အရောင်းမှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Sale deleted.', 'info');
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [user, lang, showToast]
+    [user, activeShopId, lang, showToast]
   );
 
   // ---------------------------------------------------------------------------
@@ -1095,7 +1437,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'paid' | 'credit';
       note: string;
     }) => {
-      const uid = user?.uid || 'local_demo';
+      const uid = activeShopId;
       const purId = sanitizeId(generateDocId('pur'));
       const refNo = generateVoucherNo('PO');
       const date = sanitizeDate(payload.date);
@@ -1235,7 +1577,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(error, OperationType.CREATE, path);
       }
     },
-    [user, products, ensureShopDoc, lang, showToast]
+    [user, activeShopId, products, ensureShopDoc, lang, showToast]
   );
 
   const deletePurchase = useCallback(
@@ -1245,15 +1587,15 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'အဝယ်မှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Purchase deleted.', 'info');
         return;
       }
-      const path = `shops/${user.uid}/purchases/${id}`;
+      const path = `shops/${activeShopId}/purchases/${id}`;
       try {
-        await deleteDoc(doc(db, 'shops', user.uid, 'purchases', sanitizeId(id)));
+        await deleteDoc(doc(db, 'shops', activeShopId, 'purchases', sanitizeId(id)));
         showToast(lang === 'my' ? 'အဝယ်မှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Purchase deleted.', 'info');
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [user, lang, showToast]
+    [user, activeShopId, lang, showToast]
   );
 
   // ---------------------------------------------------------------------------
@@ -1266,7 +1608,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       quantity: number;
       reason: string;
     }) => {
-      const uid = user?.uid || 'local_demo';
+      const uid = activeShopId;
       const prod = products.find((p) => p.id === payload.productId);
       if (!prod) return;
 
@@ -1317,7 +1659,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
     },
-    [user, products, ensureShopDoc, lang, showToast]
+    [user, activeShopId, products, ensureShopDoc, lang, showToast]
   );
 
   // ---------------------------------------------------------------------------
@@ -1330,7 +1672,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'id' | 'ownerId' | 'remainingAmount' | 'status' | 'createdAt' | 'updatedAt'
       >
     ) => {
-      const uid = user?.uid || 'local_demo';
+      const uid = activeShopId;
       const id = sanitizeId(generateDocId('debt'));
       const totalAmount = clampNumber(payload.totalAmount, 0);
       const paidAmount = clampNumber(payload.paidAmount, 0, totalAmount);
@@ -1373,7 +1715,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(error, OperationType.CREATE, path);
       }
     },
-    [user, ensureShopDoc, lang, showToast]
+    [user, activeShopId, ensureShopDoc, lang, showToast]
   );
 
   const recordDebtPayment = useCallback(
@@ -1405,9 +1747,9 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return;
       }
 
-      const path = `shops/${user.uid}/debts/${debtId}`;
+      const path = `shops/${activeShopId}/debts/${debtId}`;
       try {
-        await updateDoc(doc(db, 'shops', user.uid, 'debts', sanitizeId(debtId)), {
+        await updateDoc(doc(db, 'shops', activeShopId, 'debts', sanitizeId(debtId)), {
           paidAmount: nextPaid,
           remainingAmount: nextRemaining,
           status: nextStatus,
@@ -1418,7 +1760,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
     },
-    [user, debts, lang, showToast]
+    [user, activeShopId, debts, lang, showToast]
   );
 
   const deleteDebt = useCallback(
@@ -1428,15 +1770,15 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'အကြွေးမှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Debt record deleted.', 'info');
         return;
       }
-      const path = `shops/${user.uid}/debts/${id}`;
+      const path = `shops/${activeShopId}/debts/${id}`;
       try {
-        await deleteDoc(doc(db, 'shops', user.uid, 'debts', sanitizeId(id)));
+        await deleteDoc(doc(db, 'shops', activeShopId, 'debts', sanitizeId(id)));
         showToast(lang === 'my' ? 'အကြွေးမှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Debt record deleted.', 'info');
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [user, lang, showToast]
+    [user, activeShopId, lang, showToast]
   );
 
   // ---------------------------------------------------------------------------
@@ -1447,7 +1789,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       payload: Omit<Expense, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>,
       existingId?: string
     ) => {
-      const uid = user?.uid || 'local_demo';
+      const uid = activeShopId;
       const id = sanitizeId(existingId || generateDocId('exp'));
       const data = {
         date: sanitizeDate(payload.date),
@@ -1489,7 +1831,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(error, existingId ? OperationType.UPDATE : OperationType.CREATE, path);
       }
     },
-    [user, ensureShopDoc, lang, showToast]
+    [user, activeShopId, ensureShopDoc, lang, showToast]
   );
 
   const deleteExpense = useCallback(
@@ -1499,15 +1841,15 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'ကုန်ကျစရိတ် ဖျက်ပြီးပါပြီ။' : 'Expense deleted.', 'info');
         return;
       }
-      const path = `shops/${user.uid}/expenses/${id}`;
+      const path = `shops/${activeShopId}/expenses/${id}`;
       try {
-        await deleteDoc(doc(db, 'shops', user.uid, 'expenses', sanitizeId(id)));
+        await deleteDoc(doc(db, 'shops', activeShopId, 'expenses', sanitizeId(id)));
         showToast(lang === 'my' ? 'ကုန်ကျစရိတ် ဖျက်ပြီးပါပြီ။' : 'Expense deleted.', 'info');
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [user, lang, showToast]
+    [user, activeShopId, lang, showToast]
   );
 
   // ---------------------------------------------------------------------------
@@ -1515,7 +1857,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ---------------------------------------------------------------------------
   const createDelivery = useCallback(
     async (payload: Omit<Delivery, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>) => {
-      const uid = user?.uid || 'local_demo';
+      const uid = activeShopId;
       const id = sanitizeId(generateDocId('deliv'));
       const data: Delivery = {
         id,
@@ -1552,7 +1894,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(error, OperationType.CREATE, path);
       }
     },
-    [user, ensureShopDoc, lang, showToast]
+    [user, activeShopId, ensureShopDoc, lang, showToast]
   );
 
   const updateDeliveryStatus = useCallback(
@@ -1568,9 +1910,9 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return;
       }
 
-      const path = `shops/${user.uid}/deliveries/${deliveryId}`;
+      const path = `shops/${activeShopId}/deliveries/${deliveryId}`;
       try {
-        await updateDoc(doc(db, 'shops', user.uid, 'deliveries', sanitizeId(deliveryId)), {
+        await updateDoc(doc(db, 'shops', activeShopId, 'deliveries', sanitizeId(deliveryId)), {
           status,
           updatedAt: serverTimestamp(),
         });
@@ -1579,7 +1921,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
     },
-    [user, deliveries, lang, showToast]
+    [user, activeShopId, deliveries, lang, showToast]
   );
 
   const deleteDelivery = useCallback(
@@ -1589,15 +1931,15 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'ပို့ဆောင်မှုမှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Delivery deleted.', 'info');
         return;
       }
-      const path = `shops/${user.uid}/deliveries/${id}`;
+      const path = `shops/${activeShopId}/deliveries/${id}`;
       try {
-        await deleteDoc(doc(db, 'shops', user.uid, 'deliveries', sanitizeId(id)));
+        await deleteDoc(doc(db, 'shops', activeShopId, 'deliveries', sanitizeId(id)));
         showToast(lang === 'my' ? 'ပို့ဆောင်မှုမှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Delivery deleted.', 'info');
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, path);
       }
     },
-    [user, lang, showToast]
+    [user, activeShopId, lang, showToast]
   );
 
   // ---------------------------------------------------------------------------
@@ -1652,7 +1994,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const restoreBackupJson = useCallback(
     async (backup: PosBackupPayload) => {
-      const uid = user?.uid || 'local_demo';
+      const uid = activeShopId;
       if (!backup || !backup.shop || !Array.isArray(backup.products)) {
         showToast(lang === 'my' ? 'Backup ဖိုင်ပုံစံ မမှန်ကန်ပါ။' : 'Invalid backup JSON file.', 'error');
         return;
@@ -1721,7 +2063,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(error, OperationType.WRITE, path);
       }
     },
-    [user, ensureShopDoc, lang, showToast]
+    [user, activeShopId, ensureShopDoc, lang, showToast]
   );
 
   // ---------------------------------------------------------------------------
@@ -1757,7 +2099,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const pushToSupabase = useCallback(async (): Promise<boolean> => {
-    const ownerId = user?.uid || 'local_demo';
+    const ownerId = activeShopId;
     const payload = {
       ownerId,
       shop,
@@ -1855,6 +2197,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [
     user,
+    activeShopId,
     shop,
     products,
     sales,
@@ -1869,7 +2212,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ]);
 
   const pullFromSupabase = useCallback(async (): Promise<boolean> => {
-    const ownerId = user?.uid || 'local_demo';
+    const ownerId = activeShopId;
 
     const markSuccess = () => {
       const now = new Date().toISOString();
@@ -1956,12 +2299,21 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } finally {
       setSyncingSupabase(false);
     }
-  }, [user, restoreBackupJson, integrations.supabaseMode, lang, showToast]);
+  }, [user, activeShopId, restoreBackupJson, integrations.supabaseMode, lang, showToast]);
 
   const value: PosContextValue = {
     user,
     authReady,
     signingIn,
+    isAdmin,
+    accessStatus,
+    activeLicense,
+    activePass,
+    activeShopId,
+    adminTargetShopId,
+    adminTargetShopLabel,
+    adminSelectShop,
+    redeemAccessPass,
     isCloudMode,
     loadingData,
     lang,

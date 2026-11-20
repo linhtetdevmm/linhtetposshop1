@@ -22,6 +22,10 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidPassCode(code) {
+      return code is string && code.size() >= 6 && code.size() <= 40 && code.matches('^[A-Z0-9\\-]+$');
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -30,16 +34,33 @@ service cloud.firestore {
       return resource.data;
     }
 
+    // Zero-lookup primary admin helper (safe for allow list queries)
+    function isPrimaryAdmin() {
+      return isVerified() && request.auth.token.email == 'loveking20178@gmail.com';
+    }
+
     function isAdmin() {
-      return isVerified() && (
-        (request.auth.token.email == 'loveking20178@gmail.com') ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      return isPrimaryAdmin() || (
+        isVerified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function hasActiveLicense() {
+      return isAdmin() || (
+        isVerified()
+        && exists(/databases/$(database)/documents/userLicenses/$(request.auth.uid))
+        && get(/databases/$(database)/documents/userLicenses/$(request.auth.uid)).data.status == 'active'
+        && get(/databases/$(database)/documents/userLicenses/$(request.auth.uid)).data.expiresAt > request.time
+        && exists(/databases/$(database)/documents/accessPasses/$(get(/databases/$(database)/documents/userLicenses/$(request.auth.uid)).data.passCode))
+        && get(/databases/$(database)/documents/accessPasses/$(get(/databases/$(database)/documents/userLicenses/$(request.auth.uid)).data.passCode)).data.status == 'active'
+        && get(/databases/$(database)/documents/accessPasses/$(get(/databases/$(database)/documents/userLicenses/$(request.auth.uid)).data.passCode)).data.expiresAt > request.time
       );
     }
 
     function isShopOwner(shopId) {
       return isSignedIn()
         && shopId == request.auth.uid
+        && hasActiveLicense()
         && exists(/databases/$(database)/documents/shops/$(shopId))
         && get(/databases/$(database)/documents/shops/$(shopId)).data.ownerId == request.auth.uid;
     }
@@ -55,11 +76,46 @@ service cloud.firestore {
     // -------------------------------------------------------------------------
     // Entity Validation Blueprints (Anti-Update-Gap)
     // -------------------------------------------------------------------------
-    function isValidShop(data) {
+    function isValidAccessPass(data) {
+      return data.keys().hasAll(['code', 'label', 'status', 'durationDays', 'expiresAt', 'maxDevices', 'boundDevices', 'createdBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['code', 'label', 'note', 'status', 'durationDays', 'expiresAt', 'maxDevices', 'boundDevices', 'assignedUid', 'assignedEmail', 'createdBy', 'createdAt', 'updatedAt'])
+        && isValidPassCode(data.code)
+        && data.label is string && data.label.size() >= 1 && data.label.size() <= 120
+        && isOptString(data, 'note', 240)
+        && data.status in ['active', 'revoked']
+        && data.durationDays is number && data.durationDays >= 1 && data.durationDays <= 3650
+        && data.expiresAt is timestamp
+        && data.maxDevices is number && data.maxDevices >= 1 && data.maxDevices <= 50
+        && data.boundDevices is list && data.boundDevices.size() <= 50
+        && (data.boundDevices.size() == 0 || (data.boundDevices[0] is string && data.boundDevices[0].size() <= 128))
+        && isOptString(data, 'assignedUid', 128)
+        && isOptString(data, 'assignedEmail', 160)
+        && isValidId(data.createdBy)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserLicense(data) {
+      return data.keys().hasAll(['userId', 'email', 'passCode', 'label', 'status', 'expiresAt', 'maxDevices', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'email', 'displayName', 'passCode', 'label', 'status', 'expiresAt', 'maxDevices', 'createdAt', 'updatedAt'])
+        && isValidId(data.userId)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && isOptString(data, 'displayName', 120)
+        && isValidPassCode(data.passCode)
+        && data.label is string && data.label.size() >= 1 && data.label.size() <= 120
+        && data.status in ['active', 'revoked']
+        && data.expiresAt is timestamp
+        && data.maxDevices is number && data.maxDevices >= 1 && data.maxDevices <= 50
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidShop(data, shopId) {
       return data.keys().hasAll(['ownerId', 'shopName', 'currency', 'defaultMarginPercent', 'createdAt', 'updatedAt'])
         && data.keys().hasOnly(['ownerId', 'shopName', 'shopSubtitle', 'phone', 'address', 'receiptFooter', 'currency', 'defaultMarginPercent', 'telegramEnabled', 'createdAt', 'updatedAt'])
         && isValidId(data.ownerId)
-        && data.ownerId == request.auth.uid
+        && data.ownerId == shopId
+        && (data.ownerId == request.auth.uid || isAdmin())
         && data.shopName is string && data.shopName.size() >= 1 && data.shopName.size() <= 120
         && isOptString(data, 'shopSubtitle', 160)
         && isOptString(data, 'phone', 40)
@@ -72,11 +128,12 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
-    function isValidProduct(data) {
+    function isValidProduct(data, shopId) {
       return data.keys().hasAll(['ownerId', 'sku', 'name', 'category', 'unit', 'costPrice', 'marginPercent', 'sellPrice', 'stock', 'minStock', 'createdAt', 'updatedAt'])
         && data.keys().hasOnly(['ownerId', 'sku', 'name', 'category', 'unit', 'costPrice', 'marginPercent', 'sellPrice', 'stock', 'minStock', 'createdAt', 'updatedAt'])
         && isValidId(data.ownerId)
-        && data.ownerId == request.auth.uid
+        && data.ownerId == shopId
+        && (data.ownerId == request.auth.uid || isAdmin())
         && data.sku is string && data.sku.size() >= 1 && data.sku.size() <= 64
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 140
         && data.category is string && data.category.size() >= 1 && data.category.size() <= 64
@@ -90,11 +147,12 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
-    function isValidSale(data) {
+    function isValidSale(data, shopId) {
       return data.keys().hasAll(['ownerId', 'voucherNo', 'date', 'paymentMethod', 'items', 'subtotal', 'discount', 'total', 'totalCost', 'profit', 'paidAmount', 'createdAt', 'updatedAt'])
         && data.keys().hasOnly(['ownerId', 'voucherNo', 'date', 'customerName', 'customerPhone', 'paymentMethod', 'items', 'subtotal', 'discount', 'total', 'totalCost', 'profit', 'paidAmount', 'note', 'createdAt', 'updatedAt'])
         && isValidId(data.ownerId)
-        && data.ownerId == request.auth.uid
+        && data.ownerId == shopId
+        && (data.ownerId == request.auth.uid || isAdmin())
         && data.voucherNo is string && data.voucherNo.size() >= 1 && data.voucherNo.size() <= 48
         && isValidDateString(data.date)
         && isOptString(data, 'customerName', 120)
@@ -112,11 +170,12 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
-    function isValidPurchase(data) {
+    function isValidPurchase(data, shopId) {
       return data.keys().hasAll(['ownerId', 'refNo', 'date', 'supplierName', 'items', 'totalAmount', 'paidAmount', 'status', 'createdAt', 'updatedAt'])
         && data.keys().hasOnly(['ownerId', 'refNo', 'date', 'supplierName', 'items', 'totalAmount', 'paidAmount', 'status', 'note', 'createdAt', 'updatedAt'])
         && isValidId(data.ownerId)
-        && data.ownerId == request.auth.uid
+        && data.ownerId == shopId
+        && (data.ownerId == request.auth.uid || isAdmin())
         && data.refNo is string && data.refNo.size() >= 1 && data.refNo.size() <= 48
         && isValidDateString(data.date)
         && data.supplierName is string && data.supplierName.size() >= 1 && data.supplierName.size() <= 120
@@ -129,11 +188,12 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
-    function isValidStockLog(data) {
+    function isValidStockLog(data, shopId) {
       return data.keys().hasAll(['ownerId', 'productId', 'productName', 'type', 'quantity', 'previousStock', 'newStock', 'reason', 'date', 'createdAt'])
         && data.keys().hasOnly(['ownerId', 'productId', 'productName', 'type', 'quantity', 'previousStock', 'newStock', 'reason', 'date', 'createdAt'])
         && isValidId(data.ownerId)
-        && data.ownerId == request.auth.uid
+        && data.ownerId == shopId
+        && (data.ownerId == request.auth.uid || isAdmin())
         && isValidId(data.productId)
         && data.productName is string && data.productName.size() >= 1 && data.productName.size() <= 140
         && data.type in ['in', 'out', 'adjust']
@@ -145,11 +205,12 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
-    function isValidDebt(data) {
+    function isValidDebt(data, shopId) {
       return data.keys().hasAll(['ownerId', 'type', 'partyName', 'totalAmount', 'paidAmount', 'remainingAmount', 'dueDate', 'status', 'createdAt', 'updatedAt'])
         && data.keys().hasOnly(['ownerId', 'type', 'partyName', 'phone', 'referenceNo', 'totalAmount', 'paidAmount', 'remainingAmount', 'dueDate', 'status', 'note', 'createdAt', 'updatedAt'])
         && isValidId(data.ownerId)
-        && data.ownerId == request.auth.uid
+        && data.ownerId == shopId
+        && (data.ownerId == request.auth.uid || isAdmin())
         && data.type in ['receivable', 'payable']
         && data.partyName is string && data.partyName.size() >= 1 && data.partyName.size() <= 120
         && isOptString(data, 'phone', 40)
@@ -164,11 +225,12 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
-    function isValidExpense(data) {
+    function isValidExpense(data, shopId) {
       return data.keys().hasAll(['ownerId', 'date', 'category', 'title', 'amount', 'createdAt', 'updatedAt'])
         && data.keys().hasOnly(['ownerId', 'date', 'category', 'title', 'amount', 'note', 'createdAt', 'updatedAt'])
         && isValidId(data.ownerId)
-        && data.ownerId == request.auth.uid
+        && data.ownerId == shopId
+        && (data.ownerId == request.auth.uid || isAdmin())
         && isValidDateString(data.date)
         && data.category is string && data.category.size() >= 1 && data.category.size() <= 64
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
@@ -178,11 +240,12 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
-    function isValidDelivery(data) {
+    function isValidDelivery(data, shopId) {
       return data.keys().hasAll(['ownerId', 'voucherNo', 'date', 'customerName', 'address', 'courierName', 'deliveryFee', 'codAmount', 'status', 'createdAt', 'updatedAt'])
         && data.keys().hasOnly(['ownerId', 'voucherNo', 'date', 'customerName', 'phone', 'address', 'courierName', 'deliveryFee', 'codAmount', 'status', 'note', 'createdAt', 'updatedAt'])
         && isValidId(data.ownerId)
-        && data.ownerId == request.auth.uid
+        && data.ownerId == shopId
+        && (data.ownerId == request.auth.uid || isAdmin())
         && data.voucherNo is string && data.voucherNo.size() >= 1 && data.voucherNo.size() <= 48
         && isValidDateString(data.date)
         && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120
@@ -198,28 +261,138 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------------------
+    // Admin Registry Collection (Primary Admin Managed)
+    // -------------------------------------------------------------------------
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && (adminUid == request.auth.uid || isPrimaryAdmin());
+      allow list: if isPrimaryAdmin();
+      allow create, update, delete: if isPrimaryAdmin() && isValidId(adminUid);
+    }
+
+    // -------------------------------------------------------------------------
+    // Admin-Issued Random Access Passes Collection
+    // -------------------------------------------------------------------------
+    match /accessPasses/{passCode} {
+      allow get: if isValidPassCode(passCode) && (
+        isAdmin() ||
+        (isVerified() && (
+          !('assignedUid' in resource.data) ||
+          resource.data.assignedUid == '' ||
+          resource.data.assignedUid == request.auth.uid
+        ))
+      );
+      allow list: if isPrimaryAdmin();
+
+      allow create: if isAdmin()
+        && isValidPassCode(passCode)
+        && isValidAccessPass(incoming())
+        && incoming().code == passCode
+        && incoming().createdBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidPassCode(passCode)
+        && isValidAccessPass(incoming())
+        && incoming().code == existing().code
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            isVerified()
+            && existing().status == 'active'
+            && existing().expiresAt > request.time
+            && (!('assignedUid' in existing()) || existing().assignedUid == '' || existing().assignedUid == request.auth.uid)
+            && incoming().assignedUid == request.auth.uid
+            && incoming().assignedEmail == request.auth.token.email
+            && incoming().boundDevices.size() >= 1
+            && incoming().boundDevices.size() <= existing().maxDevices
+            && incoming().boundDevices.hasAll(existing().boundDevices)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['assignedUid', 'assignedEmail', 'boundDevices', 'updatedAt'])
+            && existsAfter(/databases/$(database)/documents/userLicenses/$(request.auth.uid))
+          )
+        );
+
+      allow delete: if isAdmin() && isValidPassCode(passCode);
+    }
+
+    // -------------------------------------------------------------------------
+    // Per-User Active Access License Collection (Server-Verified Expiry)
+    // -------------------------------------------------------------------------
+    match /userLicenses/{userId} {
+      allow get: if isValidId(userId) && (isAdmin() || (isSignedIn() && userId == request.auth.uid));
+      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+
+      allow create: if isValidId(userId)
+        && isValidUserLicense(incoming())
+        && incoming().userId == userId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            isVerified()
+            && userId == request.auth.uid
+            && incoming().email == request.auth.token.email
+            && incoming().status == 'active'
+            && existsAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode))
+            && getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.status == 'active'
+            && getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.expiresAt > request.time
+            && getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.assignedUid == request.auth.uid
+            && incoming().expiresAt == getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.expiresAt
+            && incoming().maxDevices == getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.maxDevices
+          )
+        );
+
+      allow update: if isValidId(userId)
+        && isValidUserLicense(incoming())
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            isVerified()
+            && userId == request.auth.uid
+            && incoming().email == request.auth.token.email
+            && incoming().status == 'active'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['passCode', 'label', 'status', 'expiresAt', 'maxDevices', 'updatedAt'])
+            && existsAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode))
+            && getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.status == 'active'
+            && getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.expiresAt > request.time
+            && getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.assignedUid == request.auth.uid
+            && incoming().expiresAt == getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.expiresAt
+            && incoming().maxDevices == getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.maxDevices
+          )
+        );
+
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    // -------------------------------------------------------------------------
     // Root Shop Profile & Settings Collection
     // -------------------------------------------------------------------------
     match /shops/{shopId} {
-      allow get: if isSignedIn() && isValidId(shopId) && (shopId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(shopId) && ((shopId == request.auth.uid && hasActiveLicense()) || isAdmin());
+      allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
 
       allow create: if isVerified()
         && isValidId(shopId)
-        && shopId == request.auth.uid
-        && isValidShop(incoming())
+        && (isAdmin() || (shopId == request.auth.uid && hasActiveLicense()))
+        && isValidShop(incoming(), shopId)
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
 
       allow update: if isVerified()
         && isValidId(shopId)
-        && isValidShop(incoming())
+        && isValidShop(incoming(), shopId)
         && incoming().ownerId == existing().ownerId
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && (
           isAdmin() ||
-          (shopId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['shopName', 'shopSubtitle', 'phone', 'address', 'receiptFooter', 'defaultMarginPercent', 'telegramEnabled', 'updatedAt']))
+          (shopId == request.auth.uid && hasActiveLicense() && incoming().diff(existing()).affectedKeys().hasOnly(['shopName', 'shopSubtitle', 'phone', 'address', 'receiptFooter', 'defaultMarginPercent', 'telegramEnabled', 'updatedAt']))
         );
 
       allow delete: if isAdmin() && isValidId(shopId);
@@ -229,20 +402,20 @@ service cloud.firestore {
       // -----------------------------------------------------------------------
       match /products/{productId} {
         allow get: if isSignedIn() && isValidId(shopId) && isValidId(productId) && (isShopOwner(shopId) || isAdmin());
-        allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+        allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
 
         allow create: if isVerified()
           && isValidId(shopId)
           && isValidId(productId)
-          && isValidProduct(incoming())
+          && isValidProduct(incoming(), shopId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time
-          && isShopOwner(shopId);
+          && (isShopOwner(shopId) || isAdmin());
 
         allow update: if isVerified()
           && isValidId(shopId)
           && isValidId(productId)
-          && isValidProduct(incoming())
+          && isValidProduct(incoming(), shopId)
           && incoming().ownerId == existing().ownerId
           && incoming().createdAt == existing().createdAt
           && incoming().updatedAt == request.time
@@ -260,20 +433,20 @@ service cloud.firestore {
       // -----------------------------------------------------------------------
       match /sales/{saleId} {
         allow get: if isSignedIn() && isValidId(shopId) && isValidId(saleId) && (isShopOwner(shopId) || isAdmin());
-        allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+        allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
 
         allow create: if isVerified()
           && isValidId(shopId)
           && isValidId(saleId)
-          && isValidSale(incoming())
+          && isValidSale(incoming(), shopId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time
-          && isShopOwner(shopId);
+          && (isShopOwner(shopId) || isAdmin());
 
         allow update: if isVerified()
           && isValidId(shopId)
           && isValidId(saleId)
-          && isValidSale(incoming())
+          && isValidSale(incoming(), shopId)
           && incoming().ownerId == existing().ownerId
           && incoming().createdAt == existing().createdAt
           && incoming().updatedAt == request.time
@@ -290,20 +463,20 @@ service cloud.firestore {
       // -----------------------------------------------------------------------
       match /purchases/{purchaseId} {
         allow get: if isSignedIn() && isValidId(shopId) && isValidId(purchaseId) && (isShopOwner(shopId) || isAdmin());
-        allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+        allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
 
         allow create: if isVerified()
           && isValidId(shopId)
           && isValidId(purchaseId)
-          && isValidPurchase(incoming())
+          && isValidPurchase(incoming(), shopId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time
-          && isShopOwner(shopId);
+          && (isShopOwner(shopId) || isAdmin());
 
         allow update: if isVerified()
           && isValidId(shopId)
           && isValidId(purchaseId)
-          && isValidPurchase(incoming())
+          && isValidPurchase(incoming(), shopId)
           && incoming().ownerId == existing().ownerId
           && incoming().createdAt == existing().createdAt
           && incoming().updatedAt == request.time
@@ -320,14 +493,14 @@ service cloud.firestore {
       // -----------------------------------------------------------------------
       match /stockLogs/{logId} {
         allow get: if isSignedIn() && isValidId(shopId) && isValidId(logId) && (isShopOwner(shopId) || isAdmin());
-        allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+        allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
 
         allow create: if isVerified()
           && isValidId(shopId)
           && isValidId(logId)
-          && isValidStockLog(incoming())
+          && isValidStockLog(incoming(), shopId)
           && incoming().createdAt == request.time
-          && isShopOwner(shopId);
+          && (isShopOwner(shopId) || isAdmin());
 
         allow update: if false;
         allow delete: if isVerified() && isValidId(shopId) && isValidId(logId) && (isShopOwner(shopId) || isAdmin());
@@ -338,20 +511,20 @@ service cloud.firestore {
       // -----------------------------------------------------------------------
       match /debts/{debtId} {
         allow get: if isSignedIn() && isValidId(shopId) && isValidId(debtId) && (isShopOwner(shopId) || isAdmin());
-        allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+        allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
 
         allow create: if isVerified()
           && isValidId(shopId)
           && isValidId(debtId)
-          && isValidDebt(incoming())
+          && isValidDebt(incoming(), shopId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time
-          && isShopOwner(shopId);
+          && (isShopOwner(shopId) || isAdmin());
 
         allow update: if isVerified()
           && isValidId(shopId)
           && isValidId(debtId)
-          && isValidDebt(incoming())
+          && isValidDebt(incoming(), shopId)
           && incoming().ownerId == existing().ownerId
           && incoming().createdAt == existing().createdAt
           && incoming().updatedAt == request.time
@@ -368,20 +541,20 @@ service cloud.firestore {
       // -----------------------------------------------------------------------
       match /expenses/{expenseId} {
         allow get: if isSignedIn() && isValidId(shopId) && isValidId(expenseId) && (isShopOwner(shopId) || isAdmin());
-        allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+        allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
 
         allow create: if isVerified()
           && isValidId(shopId)
           && isValidId(expenseId)
-          && isValidExpense(incoming())
+          && isValidExpense(incoming(), shopId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time
-          && isShopOwner(shopId);
+          && (isShopOwner(shopId) || isAdmin());
 
         allow update: if isVerified()
           && isValidId(shopId)
           && isValidId(expenseId)
-          && isValidExpense(incoming())
+          && isValidExpense(incoming(), shopId)
           && incoming().ownerId == existing().ownerId
           && incoming().createdAt == existing().createdAt
           && incoming().updatedAt == request.time
@@ -398,20 +571,20 @@ service cloud.firestore {
       // -----------------------------------------------------------------------
       match /deliveries/{deliveryId} {
         allow get: if isSignedIn() && isValidId(shopId) && isValidId(deliveryId) && (isShopOwner(shopId) || isAdmin());
-        allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+        allow list: if isPrimaryAdmin() || (isSignedIn() && resource.data.ownerId == request.auth.uid);
 
         allow create: if isVerified()
           && isValidId(shopId)
           && isValidId(deliveryId)
-          && isValidDelivery(incoming())
+          && isValidDelivery(incoming(), shopId)
           && incoming().createdAt == request.time
           && incoming().updatedAt == request.time
-          && isShopOwner(shopId);
+          && (isShopOwner(shopId) || isAdmin());
 
         allow update: if isVerified()
           && isValidId(shopId)
           && isValidId(deliveryId)
-          && isValidDelivery(incoming())
+          && isValidDelivery(incoming(), shopId)
           && incoming().ownerId == existing().ownerId
           && incoming().createdAt == existing().createdAt
           && incoming().updatedAt == request.time

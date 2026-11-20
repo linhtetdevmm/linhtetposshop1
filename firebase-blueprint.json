@@ -157,9 +157,56 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "voucherNo", "date", "customerName", "address", "courierName", "deliveryFee", "codAmount", "status", "createdAt", "updatedAt"]
+    },
+    "AccessPass": {
+      "title": "AccessPass",
+      "description": "Admin-issued random access pass with server-enforced expiry timestamp, status, device limits, and Gmail account binding.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "minLength": 6, "maxLength": 40, "pattern": "^[A-Z0-9\\-]+$" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "note": { "type": "string", "maxLength": 240 },
+        "status": { "type": "string", "enum": ["active", "revoked"] },
+        "durationDays": { "type": "number" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "maxDevices": { "type": "number" },
+        "boundDevices": { "type": "array" },
+        "assignedUid": { "type": "string", "maxLength": 128 },
+        "assignedEmail": { "type": "string", "maxLength": 160 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "label", "status", "durationDays", "expiresAt", "maxDevices", "boundDevices", "createdBy", "createdAt", "updatedAt"]
+    },
+    "UserLicense": {
+      "title": "UserLicense",
+      "description": "Active time-limited license entitlement bound to a user's Firebase UID and verified against an Admin-issued AccessPass.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "passCode": { "type": "string", "minLength": 6, "maxLength": 40, "pattern": "^[A-Z0-9\\-]+$" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "status": { "type": "string", "enum": ["active", "revoked"] },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "maxDevices": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "email", "passCode", "label", "status", "expiresAt", "maxDevices", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
+    "/accessPasses/{passCode}": {
+      "schema": { "$ref": "#/entities/AccessPass" },
+      "description": "Admin-managed random access passes keyed by pass code."
+    },
+    "/userLicenses/{userId}": {
+      "schema": { "$ref": "#/entities/UserLicense" },
+      "description": "Per-user active access license bound to the user's UID."
+    },
     "/shops/{shopId}": {
       "schema": { "$ref": "#/entities/ShopSettings" },
       "description": "Root shop profile and settings document keyed by owner UID."
