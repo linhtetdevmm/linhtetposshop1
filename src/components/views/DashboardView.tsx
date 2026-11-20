@@ -99,33 +99,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     <div className="space-y-6">
       {/* Primary 4-Column KPI Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+        <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5">
+          <div className="text-xs font-medium text-titanium-500 dark:text-titanium-400">
             {t('todaySales')}
           </div>
-          <div className="mt-2 text-2xl font-bold font-mono-num text-slate-900 dark:text-white">
+          <div className="mt-2 text-2xl font-bold font-mono-num text-titanium-900 dark:text-titanium-50">
             {formatMMK(stats.todaySalesTotal)}
           </div>
-          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          <div className="mt-2 text-xs text-titanium-500 dark:text-titanium-400">
             {sales.filter((s) => s.date === today).length} {t('orders')} · {today}
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+        <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5">
+          <div className="text-xs font-medium text-titanium-500 dark:text-titanium-400">
             {t('totalSalesMonth')}
           </div>
-          <div className="mt-2 text-2xl font-bold font-mono-num text-slate-900 dark:text-white">
+          <div className="mt-2 text-2xl font-bold font-mono-num text-burgundy-800 dark:text-burgundy-200">
             {formatMMK(stats.monthSalesTotal)}
           </div>
-          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          <div className="mt-2 text-xs text-titanium-500 dark:text-titanium-400">
             {currentMonth} · {t('monthlyExpenses')}:{' '}
             <span className="font-mono-num">{formatMMK(stats.monthExpensesTotal)}</span>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+        <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5">
+          <div className="text-xs font-medium text-titanium-500 dark:text-titanium-400">
             {t('netProfit')} ({currentMonth})
           </div>
           <div
@@ -137,27 +137,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           >
             {formatMMK(stats.netProfit)}
           </div>
-          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          <div className="mt-2 text-xs text-titanium-500 dark:text-titanium-400">
             {t('grossProfit')} − {t('expensesCol')}
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+        <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5">
+          <div className="text-xs font-medium text-titanium-500 dark:text-titanium-400">
             {t('lowStockCount')}
           </div>
           <div
             className={`mt-2 text-2xl font-bold font-mono-num ${
               stats.lowStockProducts.length > 0
                 ? 'text-amber-700 dark:text-amber-400'
-                : 'text-slate-900 dark:text-white'
+                : 'text-titanium-900 dark:text-titanium-50'
             }`}
           >
             {stats.lowStockProducts.length} / {products.length}
           </div>
-          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+          <div className="mt-2 text-xs text-titanium-500 dark:text-titanium-400">
             {t('pendingDeliveries')}:{' '}
-            <span className="font-mono-num font-medium text-slate-700 dark:text-slate-300">
+            <span className="font-mono-num font-medium text-titanium-700 dark:text-titanium-300">
               {stats.activeDeliveries}
             </span>
           </div>
@@ -165,42 +165,42 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Secondary Operational Summary Row (Flat Hairline Bar) */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-3.5 flex flex-wrap items-center justify-between gap-4 text-sm">
+      <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl px-5 py-3.5 flex flex-wrap items-center justify-between gap-4 text-sm">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <div>
-            <span className="text-xs text-slate-500 dark:text-slate-400 mr-2">
+            <span className="text-xs text-titanium-500 dark:text-titanium-400 mr-2">
               {t('totalReceivable')}:
             </span>
-            <span className="font-mono-num font-semibold text-teal-800 dark:text-teal-300">
+            <span className="font-mono-num font-semibold text-burgundy-700 dark:text-burgundy-300">
               {formatMMK(stats.totalReceivable)}
             </span>
           </div>
-          <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">
+          <span className="text-titanium-300 dark:text-titanium-700" aria-hidden="true">
             |
           </span>
           <div>
-            <span className="text-xs text-slate-500 dark:text-slate-400 mr-2">
+            <span className="text-xs text-titanium-500 dark:text-titanium-400 mr-2">
               {t('totalPayable')}:
             </span>
             <span className="font-mono-num font-semibold text-amber-700 dark:text-amber-400">
               {formatMMK(stats.totalPayable)}
             </span>
           </div>
-          <span className="text-slate-300 dark:text-slate-700" aria-hidden="true">
+          <span className="text-titanium-300 dark:text-titanium-700" aria-hidden="true">
             |
           </span>
           <div>
-            <span className="text-xs text-slate-500 dark:text-slate-400 mr-2">
+            <span className="text-xs text-titanium-500 dark:text-titanium-400 mr-2">
               {t('pendingDeliveries')}:
             </span>
-            <span className="font-mono-num font-semibold text-slate-800 dark:text-slate-200">
+            <span className="font-mono-num font-semibold text-titanium-800 dark:text-titanium-200">
               {stats.activeDeliveries}
             </span>
           </div>
         </div>
         <button
           onClick={() => onNavigate('reports')}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-teal-700 dark:text-teal-400 hover:underline whitespace-nowrap shrink-0"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-burgundy-700 dark:text-burgundy-300 hover:underline whitespace-nowrap shrink-0"
         >
           {t('navReports')}
           <ArrowRight className="w-3.5 h-3.5" />
@@ -209,18 +209,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* Main Chart + Low Stock Watchlist */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
+        <div className="lg:col-span-2 bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">
               {t('revenueProfitChart')}
             </h3>
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-mono-num">
+            <span className="text-xs text-titanium-500 dark:text-titanium-400 font-mono-num">
               MMK (Ks)
             </span>
           </div>
           <div className="h-72 w-full">
             {monthlyChartData.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-sm text-slate-500">
+              <div className="h-full flex items-center justify-center text-sm text-titanium-500 dark:text-titanium-400">
                 No chart data yet.
               </div>
             ) : (
@@ -232,16 +232,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <CartesianGrid
                     strokeDasharray="3 3"
                     vertical={false}
-                    stroke={darkMode ? '#1e293b' : '#e2e8f0'}
+                    stroke={darkMode ? '#2c2221' : '#e8dfdc'}
                   />
                   <XAxis
                     dataKey="month"
-                    tick={{ fontSize: 12, fill: darkMode ? '#94a3b8' : '#64748b' }}
+                    tick={{ fontSize: 12, fill: darkMode ? '#a4938e' : '#776661' }}
                     axisLine={false}
                     tickLine={false}
                   />
                   <YAxis
-                    tick={{ fontSize: 11, fill: darkMode ? '#94a3b8' : '#64748b' }}
+                    tick={{ fontSize: 11, fill: darkMode ? '#a4938e' : '#776661' }}
                     axisLine={false}
                     tickLine={false}
                     tickFormatter={(v) => `${Math.round(Number(v) / 1000)}k`}
@@ -249,8 +249,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <Tooltip
                     formatter={(value: unknown) => formatMMK(Number(value) || 0)}
                     contentStyle={{
-                      backgroundColor: darkMode ? '#0f172a' : '#ffffff',
-                      borderColor: darkMode ? '#1e293b' : '#e2e8f0',
+                      backgroundColor: darkMode ? '#1b1515' : '#ffffff',
+                      borderColor: darkMode ? '#2c2221' : '#e8dfdc',
+                      color: darkMode ? '#faf8f7' : '#1b1515',
                       borderRadius: '8px',
                       fontSize: '12px',
                     }}
@@ -258,21 +259,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <Bar
                     dataKey="revenue"
                     name={t('revenue')}
-                    fill="#0F766E"
+                    fill={darkMode ? '#b24c47' : '#7a2e2e'}
                     radius={[4, 4, 0, 0]}
                     maxBarSize={32}
                   />
                   <Bar
                     dataKey="profit"
                     name={t('profit')}
-                    fill="#16A34A"
+                    fill={darkMode ? '#4ade80' : '#2e7d5b'}
                     radius={[4, 4, 0, 0]}
                     maxBarSize={32}
                   />
                   <Bar
                     dataKey="expense"
                     name={t('expense')}
-                    fill="#D97706"
+                    fill={darkMode ? '#e3a05b' : '#c2783a'}
                     radius={[4, 4, 0, 0]}
                     maxBarSize={32}
                   />
@@ -283,34 +284,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Low Stock Watchlist */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-col">
+        <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5 flex flex-col">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">
               {t('lowStockAlerts')}
             </h3>
             <button
               onClick={() => onNavigate('stock')}
-              className="text-xs font-medium text-teal-700 dark:text-teal-400 hover:underline whitespace-nowrap"
+              className="text-xs font-medium text-burgundy-700 dark:text-burgundy-300 hover:underline whitespace-nowrap"
             >
               {t('viewAll')}
             </button>
           </div>
           {stats.lowStockProducts.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-sm text-slate-500 text-center py-8">
+            <div className="flex-1 flex items-center justify-center text-sm text-titanium-500 dark:text-titanium-400 text-center py-8">
               {t('noLowStock')}
             </div>
           ) : (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 flex-1">
+            <div className="divide-y divide-titanium-100 dark:divide-titanium-800 flex-1">
               {stats.lowStockProducts.slice(0, 6).map((item) => (
                 <div
                   key={item.id}
                   className="py-2.5 flex items-center justify-between gap-3"
                 >
                   <div className="min-w-0">
-                    <div className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+                    <div className="text-sm font-medium text-titanium-900 dark:text-titanium-50 truncate">
                       {item.name}
                     </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 font-mono-num">
+                    <div className="text-xs text-titanium-500 dark:text-titanium-400 font-mono-num">
                       {item.sku} · min {item.minStock}
                     </div>
                   </div>
@@ -333,21 +334,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Recent Sales Table */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+      <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-titanium-200 dark:border-titanium-800">
+          <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">
             {t('recentSales')}
           </h3>
           <button
             onClick={() => onNavigate('pos')}
-            className="text-xs font-medium text-teal-700 dark:text-teal-400 hover:underline whitespace-nowrap"
+            className="text-xs font-medium text-burgundy-700 dark:text-burgundy-300 hover:underline whitespace-nowrap"
           >
             {t('viewAll')}
           </button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
-            <thead className="bg-slate-50 dark:bg-slate-950/60 text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
+            <thead className="bg-titanium-50 dark:bg-titanium-950/60 text-xs text-titanium-500 dark:text-titanium-400 border-b border-titanium-200 dark:border-titanium-800">
               <tr>
                 <th className="px-5 py-3 font-medium">{t('voucherNo')}</th>
                 <th className="px-4 py-3 font-medium">{t('date')}</th>
@@ -358,25 +359,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <th className="px-5 py-3 font-medium text-right">{t('voucher')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            <tbody className="divide-y divide-titanium-100 dark:divide-titanium-800">
               {sales.slice(0, 6).map((sale) => (
                 <tr
                   key={sale.id}
-                  className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                  className="hover:bg-titanium-50/80 dark:hover:bg-titanium-800/40 transition-colors"
                 >
-                  <td className="px-5 py-3 font-mono-num font-medium text-slate-900 dark:text-slate-100 whitespace-nowrap">
+                  <td className="px-5 py-3 font-mono-num font-medium text-titanium-900 dark:text-titanium-50 whitespace-nowrap">
                     {sale.voucherNo}
                   </td>
-                  <td className="px-4 py-3 font-mono-num text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                  <td className="px-4 py-3 font-mono-num text-titanium-600 dark:text-titanium-400 whitespace-nowrap">
                     {sale.date}
                   </td>
-                  <td className="px-4 py-3 text-slate-800 dark:text-slate-200">
+                  <td className="px-4 py-3 text-titanium-800 dark:text-titanium-200">
                     {sale.customerName || t('walkInCustomer')}
                   </td>
-                  <td className="px-4 py-3 text-xs uppercase font-medium text-slate-600 dark:text-slate-300">
+                  <td className="px-4 py-3 text-xs uppercase font-medium text-titanium-600 dark:text-titanium-300">
                     {sale.paymentMethod}
                   </td>
-                  <td className="px-4 py-3 text-right font-mono-num font-semibold text-slate-900 dark:text-white whitespace-nowrap">
+                  <td className="px-4 py-3 text-right font-mono-num font-semibold text-titanium-900 dark:text-titanium-50 whitespace-nowrap">
                     {formatMMK(sale.total)}
                   </td>
                   <td className="px-4 py-3 text-right font-mono-num text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
@@ -385,7 +386,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <td className="px-5 py-3 text-right">
                     <button
                       onClick={() => onOpenVoucher(sale)}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-teal-700 dark:text-teal-400 hover:underline whitespace-nowrap"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-burgundy-700 dark:text-burgundy-300 hover:underline whitespace-nowrap"
                     >
                       <Receipt className="w-3.5 h-3.5" />
                       {t('voucher')}
@@ -395,7 +396,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               ))}
               {sales.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-slate-500">
+                  <td colSpan={7} className="px-5 py-10 text-center text-titanium-500 dark:text-titanium-400">
                     No sales recorded yet.
                   </td>
                 </tr>

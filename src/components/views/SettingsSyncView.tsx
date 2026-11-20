@@ -305,7 +305,7 @@ export const SettingsSyncView: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Sub-navigation Tabs */}
-      <div className="inline-flex flex-wrap items-center gap-1 p-1 bg-slate-200/70 dark:bg-slate-800 rounded-lg">
+      <div className="inline-flex flex-wrap items-center gap-1 p-1 bg-titanium-200/70 dark:bg-titanium-800 rounded-lg">
         {(
           [
             ['profile', t('shopProfileTab')],
@@ -318,8 +318,8 @@ export const SettingsSyncView: React.FC = () => {
             onClick={() => setTab(id)}
             className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
               tab === id
-                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-400'
+                ? 'bg-white dark:bg-titanium-900 text-burgundy-800 dark:text-burgundy-200 shadow-xs'
+                : 'text-titanium-600 dark:text-titanium-400 hover:text-titanium-900 dark:hover:text-titanium-50'
             }`}
           >
             {label}
@@ -331,13 +331,13 @@ export const SettingsSyncView: React.FC = () => {
       {tab === 'profile' && (
         <form
           onSubmit={handleSaveShop}
-          className="max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4"
+          className="max-w-2xl bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4"
         >
           <div>
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+            <h3 className="text-base font-semibold text-titanium-900 dark:text-titanium-50">
               {t('shopProfileTab')}
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-titanium-500 dark:text-titanium-400 mt-0.5">
               {lang === 'my'
                 ? 'ဆိုင်အမည်နှင့် အချက်အလက်များကို ပြောင်းလဲလိုက်လျှင် Dashboard နှင့် PNG/PDF ဘောင်ချာများအားလုံးတွင် ချက်ချင်းပြောင်းလဲသွားပါမည်။'
                 : 'Changes to your shop name and details update the workspace header and all PNG/PDF vouchers immediately.'}
@@ -346,41 +346,41 @@ export const SettingsSyncView: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
                 {t('shopName')}
               </label>
               <input
                 required
                 value={shopName}
                 onChange={(e) => setShopName(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-600"
+                className="w-full px-3.5 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
               />
             </div>
 
             <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
                 {t('shopSubtitle')}
               </label>
               <input
                 value={shopSubtitle}
                 onChange={(e) => setShopSubtitle(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-600"
+                className="w-full px-3.5 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
                 {t('shopPhone')}
               </label>
               <input
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm font-mono-num bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-600"
+                className="w-full px-3.5 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
                 {t('defaultMargin')}
               </label>
               <input
@@ -390,30 +390,30 @@ export const SettingsSyncView: React.FC = () => {
                 step="0.5"
                 value={defaultMarginPercent}
                 onChange={(e) => setDefaultMarginPercent(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm font-mono-num bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-600"
+                className="w-full px-3.5 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
               />
             </div>
 
             <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
                 {t('shopAddress')}
               </label>
               <input
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-600"
+                className="w-full px-3.5 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
               />
             </div>
 
             <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
                 {t('receiptFooter')}
               </label>
               <textarea
                 rows={2}
                 value={receiptFooter}
                 onChange={(e) => setReceiptFooter(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:border-teal-600"
+                className="w-full px-3.5 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
               />
             </div>
           </div>
@@ -422,7 +422,7 @@ export const SettingsSyncView: React.FC = () => {
             <button
               type="submit"
               disabled={busyAction === 'saveShop'}
-              className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg transition-colors"
+              className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors"
             >
               <Save className="w-4 h-4" />
               {t('saveSettings')}
@@ -435,11 +435,11 @@ export const SettingsSyncView: React.FC = () => {
       {tab === 'cloud' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Firebase Cloud Card */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4">
+          <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <Cloud className="w-5 h-5 text-teal-700 dark:text-teal-400" />
-                <h3 className="text-sm font-semibold">Firebase Firestore &amp; Auth</h3>
+                <Cloud className="w-5 h-5 text-burgundy-700 dark:text-burgundy-300" />
+                <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">Firebase Firestore &amp; Auth</h3>
               </div>
               <span
                 className={`text-xs font-semibold ${
@@ -449,12 +449,12 @@ export const SettingsSyncView: React.FC = () => {
                 {isCloudMode ? t('cloudSynced') : t('localDemoMode')}
               </span>
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+            <p className="text-xs text-titanium-600 dark:text-titanium-400 leading-relaxed">
               {lang === 'my'
                 ? 'Offline-First IndexedDB Cache ပါဝင်သော Firebase Firestore ဖြင့် ချိတ်ဆက်ထားသောကြောင့် အင်တာနက်နှေးချိန် သို့မဟုတ် အလုပ်ရှုပ်ချိန်တွင်ပင် POS စနစ် လုံးဝမလေးဘဲ သွက်လက်စွာ အလုပ်လုပ်နိုင်ပါသည်။'
                 : 'Connected to Firebase Firestore with persistent multi-tab IndexedDB cache for instant zero-lag POS operations even under unstable networks.'}
             </p>
-            <div className="text-xs font-mono-num text-slate-500 space-y-1 border-t border-slate-100 dark:border-slate-800 pt-3">
+            <div className="text-xs font-mono-num text-titanium-500 dark:text-titanium-400 space-y-1 border-t border-titanium-100 dark:border-titanium-800 pt-3">
               <div>Project: {firebaseProjectInfo.projectId}</div>
               <div>Account: {user ? user.email : 'Not signed in (Local Preview)'}</div>
             </div>
@@ -463,14 +463,14 @@ export const SettingsSyncView: React.FC = () => {
                 <button
                   onClick={loginWithGoogle}
                   disabled={signingIn}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-50 rounded-lg"
+                  className="px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-50 rounded-lg transition-colors"
                 >
                   {signingIn ? '...' : t('signInGoogle')}
                 </button>
               ) : (
                 <button
                   onClick={seedCloudWithSampleData}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg"
+                  className="px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors"
                 >
                   {t('seedSampleData')}
                 </button>
@@ -479,23 +479,23 @@ export const SettingsSyncView: React.FC = () => {
           </div>
 
           {/* Supabase PostgreSQL Sync Card */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4">
+          <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <Database className="w-5 h-5 text-teal-700 dark:text-teal-400" />
-                <h3 className="text-sm font-semibold">{t('supabaseTitle')}</h3>
+                <Database className="w-5 h-5 text-burgundy-700 dark:text-burgundy-300" />
+                <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">{t('supabaseTitle')}</h3>
               </div>
               <span
                 className={`text-xs font-semibold ${
                   integrations.supabaseConfigured
                     ? 'text-emerald-700 dark:text-emerald-400'
-                    : 'text-slate-500'
+                    : 'text-titanium-500 dark:text-titanium-400'
                 }`}
               >
                 {integrations.supabaseConfigured ? t('configured') : t('notConfiguredEnv')}
               </span>
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+            <p className="text-xs text-titanium-600 dark:text-titanium-400 leading-relaxed">
               {lang === 'my'
                 ? 'Firebase အပြင် Supabase PostgreSQL နှင့်ပါ တွဲဖက်အသုံးပြုလိုပါက SUPABASE_URL နှင့် SUPABASE_ANON_KEY ကို Server Environment Secrets တွင်ထည့်ပြီး အောက်ပါ SQL Schema ကို Run ထားရုံဖြင့် Sync တင်/ပြန်ဆွဲနိုင်ပါသည်။'
                 : 'Mirror or restore your entire POS database with Supabase PostgreSQL via the secure /api/supabase/* server proxy. Set SUPABASE_URL and SUPABASE_ANON_KEY in environment secrets and run the schema below.'}
@@ -508,7 +508,7 @@ export const SettingsSyncView: React.FC = () => {
                   setBusyAction(null);
                 }}
                 disabled={busyAction !== null}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-50 rounded-lg"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-50 rounded-lg transition-colors"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 {busyAction === 'supaPush' ? '...' : t('pushToSupabase')}
@@ -520,21 +520,21 @@ export const SettingsSyncView: React.FC = () => {
                   setBusyAction(null);
                 }}
                 disabled={busyAction !== null}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-titanium-700 dark:text-titanium-200 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200 dark:hover:bg-titanium-700 rounded-lg transition-colors"
               >
                 <Download className="w-3.5 h-3.5" />
                 {busyAction === 'supaPull' ? '...' : t('pullFromSupabase')}
               </button>
               <button
                 onClick={handleDownloadSql}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-teal-800 dark:text-teal-300 hover:underline"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-burgundy-800 dark:text-burgundy-300 hover:underline"
               >
                 <FileCode2 className="w-3.5 h-3.5" />
                 {t('downloadSqlSchema')}
               </button>
               <button
                 onClick={handleCopySql}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-teal-700 dark:hover:text-teal-400"
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-titanium-600 dark:text-titanium-300 hover:text-burgundy-700 dark:hover:text-burgundy-300"
               >
                 <Copy className="w-3.5 h-3.5" />
                 {lang === 'my' ? 'SQL + RLS Copy ကူးမည်' : 'Copy SQL + RLS'}
@@ -543,9 +543,9 @@ export const SettingsSyncView: React.FC = () => {
           </div>
 
           {/* Backup & Restore Card */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4">
-            <h3 className="text-sm font-semibold">{t('backupTitle')}</h3>
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+          <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4">
+            <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">{t('backupTitle')}</h3>
+            <p className="text-xs text-titanium-600 dark:text-titanium-400 leading-relaxed">
               {lang === 'my'
                 ? 'ဆိုင်ဒေတာအားလုံး (ပစ္စည်း၊ အရောင်း၊ အဝယ်၊ Stock၊ အကြွေး၊ ကုန်ကျစရိတ်၊ ပို့ဆောင်ရေး) ကို JSON ဖိုင်တစ်ဖိုင်တည်းဖြင့် သိမ်းဆည်းပြီး အချိန်မရွေး ပြန်လည် Restore လုပ်နိုင်ပါသည်။'
                 : 'Export a complete timestamped JSON snapshot of all shop records, or restore an earlier backup directly into Local or Firebase Cloud storage.'}
@@ -553,7 +553,7 @@ export const SettingsSyncView: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2.5">
               <button
                 onClick={exportBackupJson}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors"
               >
                 <Download className="w-3.5 h-3.5" />
                 {t('exportBackup')}
@@ -561,7 +561,7 @@ export const SettingsSyncView: React.FC = () => {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={busyAction === 'restore'}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-titanium-700 dark:text-titanium-200 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200 dark:hover:bg-titanium-700 rounded-lg transition-colors"
               >
                 <Upload className="w-3.5 h-3.5" />
                 {busyAction === 'restore' ? '...' : t('importBackup')}
@@ -577,23 +577,23 @@ export const SettingsSyncView: React.FC = () => {
           </div>
 
           {/* Telegram Bot Integration Card */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4">
+          <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <Send className="w-5 h-5 text-teal-700 dark:text-teal-400" />
-                <h3 className="text-sm font-semibold">{t('telegramTitle')}</h3>
+                <Send className="w-5 h-5 text-burgundy-700 dark:text-burgundy-300" />
+                <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">{t('telegramTitle')}</h3>
               </div>
               <span
                 className={`text-xs font-semibold ${
                   integrations.telegramConfigured
                     ? 'text-emerald-700 dark:text-emerald-400'
-                    : 'text-slate-500'
+                    : 'text-titanium-500 dark:text-titanium-400'
                 }`}
               >
                 {integrations.telegramConfigured ? t('configured') : t('notConfiguredEnv')}
               </span>
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+            <p className="text-xs text-titanium-600 dark:text-titanium-400 leading-relaxed">
               {lang === 'my'
                 ? 'Telegram Bot မှတစ်ဆင့် ဆိုင်ရှင်၏ ဖုန်းထဲသို့ ဘောင်ချာတစ်စောင်ချင်းစီ သို့မဟုတ် နေ့စဉ်အရောင်းချုပ်ကို ချက်ချင်းပို့နိုင်ပါသည်။ Server Secrets တွင် TELEGRAM_BOT_TOKEN နှင့် TELEGRAM_CHAT_ID ထည့်သွင်းပါ။'
                 : 'Deliver individual sale receipts or end-of-day MMK financial summaries straight to your Telegram chat via /api/telegram/send using TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID.'}
@@ -601,7 +601,7 @@ export const SettingsSyncView: React.FC = () => {
             <button
               onClick={handleSendDailyTelegram}
               disabled={busyAction === 'telegram'}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-50 rounded-lg"
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-50 rounded-lg transition-colors"
             >
               <Send className="w-3.5 h-3.5" />
               {busyAction === 'telegram' ? '...' : t('sendDailyTelegram')}
@@ -613,15 +613,15 @@ export const SettingsSyncView: React.FC = () => {
       {/* TAB 3: Myanmar Step-by-Step Guide & Source Code Architecture */}
       {tab === 'guide' && (
         <div className="max-w-4xl space-y-5">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+          <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4">
+            <h3 className="text-base font-bold text-titanium-900 dark:text-titanium-50">
               ၁။ စနစ်တည်ဆောက်ပုံ (Folder Architecture &amp; Source Code ရှင်းလင်းချက်)
             </h3>
-            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            <p className="text-sm text-titanium-600 dark:text-titanium-300 leading-relaxed">
               ဤ ShwePOS Web App ကို မည်မျှပင် အရောင်းများနေစေကာမူ Server မကျပ်ဘဲ အမြဲပေါ့ပါးသွက်လက်နေစေရန်{' '}
               <strong>Offline-First + Local Cache Architecture</strong> ဖြင့် တည်ဆောက်ထားပါသည်။
             </p>
-            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-4 font-mono-num text-xs leading-relaxed text-slate-700 dark:text-slate-300 overflow-x-auto">
+            <div className="bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-800 rounded-lg p-4 font-mono-num text-xs leading-relaxed text-titanium-700 dark:text-titanium-300 overflow-x-auto">
               <pre>{`├── server.ts                  # Express Backend (Telegram & Supabase Proxy API)
 ├── firestore.rules            # Hardened Firebase Security Rules (Owner-Only Isolation)
 ├── supabase_schema.sql        # Supabase PostgreSQL Tables ဖန်တီးရန် SQL ဖိုင်
@@ -636,18 +636,18 @@ export const SettingsSyncView: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+          <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4">
+            <h3 className="text-base font-bold text-titanium-900 dark:text-titanium-50">
               ၂။ Firebase နှင့် Supabase နှစ်မျိုးလုံး ချိတ်ဆက်အသုံးပြုနည်း (Step-by-Step)
             </h3>
-            <ol className="list-decimal list-inside space-y-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+            <ol className="list-decimal list-inside space-y-3 text-sm text-titanium-700 dark:text-titanium-300 leading-relaxed">
               <li>
                 <strong>Firebase ချိတ်ဆက်ခြင်း:</strong> ညာဘက်အပေါ်ထောင့်ရှိ{' '}
-                <code className="font-mono-num text-xs bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                <code className="font-mono-num text-xs bg-titanium-100 dark:bg-titanium-800 px-1.5 py-0.5 rounded">
                   Google ဖြင့် ဝင်မည်
                 </code>{' '}
                 ကိုနှိပ်လိုက်ရုံဖြင့် သင့်ကိုယ်ပိုင် Firestore Cloud Database သို့ အလိုအလျောက်ချိတ်ဆက်သွားပါမည်။{' '}
-                <code className="font-mono-num text-xs bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                <code className="font-mono-num text-xs bg-titanium-100 dark:bg-titanium-800 px-1.5 py-0.5 rounded">
                   persistentLocalCache
                 </code>{' '}
                 ပါဝင်သောကြောင့် ဖုန်း/ကွန်ပျူတာထဲတွင် ချက်ချင်းသိမ်းပြီး နောက်ကွယ်မှ Cloud သို့ Sync တင်ပေးပါသည်။
@@ -658,27 +658,27 @@ export const SettingsSyncView: React.FC = () => {
                   href="https://supabase.com"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-teal-700 dark:text-teal-400 underline"
+                  className="text-burgundy-700 dark:text-burgundy-300 underline"
                 >
                   supabase.com
                 </a>{' '}
                 တွင် Project အသစ်ဖွင့်ပြီး <strong>SQL Editor</strong> ထဲသို့ ဤ App မှ{' '}
-                <code className="font-mono-num text-xs bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                <code className="font-mono-num text-xs bg-titanium-100 dark:bg-titanium-800 px-1.5 py-0.5 rounded">
                   supabase_schema.sql
                 </code>{' '}
                 ကို Run ပေးပါ။ ထို့နောက် Environment Secrets တွင်{' '}
-                <code className="font-mono-num text-xs bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                <code className="font-mono-num text-xs bg-titanium-100 dark:bg-titanium-800 px-1.5 py-0.5 rounded">
                   SUPABASE_URL
                 </code>{' '}
                 နှင့်{' '}
-                <code className="font-mono-num text-xs bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                <code className="font-mono-num text-xs bg-titanium-100 dark:bg-titanium-800 px-1.5 py-0.5 rounded">
                   SUPABASE_ANON_KEY
                 </code>{' '}
                 ထည့်လိုက်လျှင် တစ်ချက်နှိပ်ရုံဖြင့် Firebase ↔ Supabase Sync လုပ်နိုင်ပါပြီ။
               </li>
               <li>
                 <strong>Telegram Bot ချိတ်ဆက်ခြင်း:</strong> Telegram ရှိ{' '}
-                <code className="font-mono-num text-xs bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                <code className="font-mono-num text-xs bg-titanium-100 dark:bg-titanium-800 px-1.5 py-0.5 rounded">
                   @BotFather
                 </code>{' '}
                 တွင် <code className="font-mono-num text-xs">/newbot</code> ဖြင့် Token ရယူပြီး{' '}
@@ -689,15 +689,15 @@ export const SettingsSyncView: React.FC = () => {
             </ol>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+          <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4">
+            <h3 className="text-base font-bold text-titanium-900 dark:text-titanium-50">
               ၃။ Web App မှ PC Desktop App (.exe / .dmg) ပြန်ထုတ်နည်း (Electron)
             </h3>
-            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            <p className="text-sm text-titanium-600 dark:text-titanium-300 leading-relaxed">
               ဤ Project ကို Windows/Mac ကွန်ပျူတာတွင် Offline Desktop Software အဖြစ် ပြန်ထုတ်လိုပါက
               အောက်ပါအဆင့် ၃ ဆင့်ဖြင့် Electron Wrapper ထည့်သွင်းနိုင်ပါသည်:
             </p>
-            <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-4 font-mono-num text-xs leading-relaxed text-slate-700 dark:text-slate-300 overflow-x-auto">
+            <div className="bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-800 rounded-lg p-4 font-mono-num text-xs leading-relaxed text-titanium-700 dark:text-titanium-300 overflow-x-auto">
               <pre>{`# 1. Production Build ထုတ်ပါ
 npm run build
 

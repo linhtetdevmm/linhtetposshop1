@@ -32,21 +32,21 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-[#F6F8FA] dark:bg-slate-950 p-6">
-          <div className="max-w-lg w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4">
-            <div className="flex items-center gap-3 text-red-700 dark:text-red-400">
+        <div className="min-h-screen flex items-center justify-center bg-titanium-50 dark:bg-titanium-950 p-6">
+          <div className="max-w-lg w-full bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4">
+            <div className="flex items-center gap-3 text-burgundy-700 dark:text-burgundy-300">
               <AlertTriangle className="w-6 h-6 shrink-0" />
               <h2 className="text-lg font-semibold">Application Error Detected</h2>
             </div>
-            <p className="text-sm text-slate-600 dark:text-slate-300">
+            <p className="text-sm text-titanium-600 dark:text-titanium-300">
               စနစ်အတွင်း ချို့ယွင်းချက်တစ်ခု ဖြစ်ပေါ်ခဲ့ပါသည်။ ကျေးဇူးပြု၍ စာမျက်နှာကို ပြန်လည်ဖွင့်ပေးပါ။
             </p>
-            <pre className="text-xs font-mono-num bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 p-3 rounded-lg overflow-auto max-h-40 whitespace-pre-wrap break-all">
+            <pre className="text-xs font-mono-num bg-titanium-100 dark:bg-titanium-800 text-titanium-800 dark:text-titanium-200 p-3 rounded-lg overflow-auto max-h-40 whitespace-pre-wrap break-all">
               {this.state.errorMessage}
             </pre>
             <button
               onClick={this.handleReload}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-teal-700 hover:bg-teal-800 rounded-lg transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors"
             >
               <RotateCcw className="w-4 h-4" />
               Reload Application

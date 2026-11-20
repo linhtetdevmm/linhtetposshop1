@@ -76,16 +76,16 @@ function PosShell() {
   };
 
   return (
-    <div className="min-h-screen flex bg-[#F6F8FA] dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+    <div className="min-h-screen flex bg-titanium-50 dark:bg-titanium-950 text-titanium-900 dark:text-titanium-50">
       {/* Desktop Sidebar (256px) */}
-      <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 sticky top-0 h-screen">
+      <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:shrink-0 bg-white dark:bg-titanium-900 border-r border-titanium-200 dark:border-titanium-800 sticky top-0 h-screen">
         {/* Brand Block */}
-        <div className="h-16 px-5 flex items-center border-b border-slate-200 dark:border-slate-800">
+        <div className="h-16 px-5 flex items-center border-b border-titanium-200 dark:border-titanium-800">
           <div className="min-w-0">
-            <div className="text-sm font-bold tracking-tight text-slate-900 dark:text-white truncate">
+            <div className="text-sm font-bold tracking-tight text-burgundy-800 dark:text-burgundy-300 truncate">
               {shop.shopName}
             </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+            <div className="text-[11px] text-titanium-500 dark:text-titanium-400 truncate">
               {isCloudMode ? t('cloudSynced') : t('localDemoMode')} · MMK
             </div>
           </div>
@@ -102,8 +102,8 @@ function PosShell() {
                 onClick={() => handleSelectNav(item.id)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors text-left ${
                   active
-                    ? 'bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-slate-100'
+                    ? 'bg-burgundy-50 dark:bg-burgundy-950 text-burgundy-800 dark:text-burgundy-300 font-semibold'
+                    : 'text-titanium-600 dark:text-titanium-400 hover:bg-titanium-100/80 dark:hover:bg-titanium-800/70 hover:text-titanium-900 dark:hover:text-titanium-50'
                 }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
@@ -114,18 +114,18 @@ function PosShell() {
         </nav>
 
         {/* Sidebar Footer: Account & Theme/Lang Controls */}
-        <div className="p-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+        <div className="p-3 border-t border-titanium-200 dark:border-titanium-800 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <button
               onClick={() => setLang(lang === 'my' ? 'en' : 'my')}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors whitespace-nowrap"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-titanium-700 dark:text-titanium-200 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-md transition-colors whitespace-nowrap"
             >
               <Globe className="w-3.5 h-3.5" />
               {lang === 'my' ? 'မြန်မာ / EN' : 'EN / မြန်မာ'}
             </button>
             <button
               onClick={toggleDarkMode}
-              className="p-1.5 text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors"
+              className="p-1.5 text-titanium-700 dark:text-burgundy-300 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-md transition-colors"
               aria-label={darkMode ? t('lightMode') : t('darkMode')}
               title={darkMode ? t('lightMode') : t('darkMode')}
             >
@@ -136,14 +136,16 @@ function PosShell() {
           {user ? (
             <div className="flex items-center justify-between gap-2 px-2 py-1.5">
               <div className="min-w-0">
-                <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
+                <div className="text-xs font-semibold text-titanium-900 dark:text-titanium-50 truncate">
                   {user.displayName || user.email}
                 </div>
-                <div className="text-[11px] text-slate-500 truncate">{user.email}</div>
+                <div className="text-[11px] text-titanium-500 dark:text-titanium-400 truncate">
+                  {user.email}
+                </div>
               </div>
               <button
                 onClick={logout}
-                className="p-1.5 text-slate-500 hover:text-red-600 rounded-md transition-colors shrink-0"
+                className="p-1.5 text-titanium-500 hover:text-red-600 dark:hover:text-red-400 rounded-md transition-colors shrink-0"
                 title={t('signOut')}
                 aria-label={t('signOut')}
               >
@@ -154,7 +156,7 @@ function PosShell() {
             <button
               onClick={loginWithGoogle}
               disabled={signingIn}
-              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 rounded-lg transition-colors whitespace-nowrap"
+              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-burgundy-800 dark:text-burgundy-200 bg-white dark:bg-titanium-950 border border-titanium-300 dark:border-titanium-700 hover:bg-burgundy-50 dark:hover:bg-burgundy-950/60 disabled:opacity-50 rounded-lg transition-colors whitespace-nowrap"
             >
               <LogIn className="w-3.5 h-3.5" />
               {signingIn ? '...' : t('signInGoogle')}
@@ -167,15 +169,17 @@ function PosShell() {
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden flex">
           <div
-            className="fixed inset-0 bg-slate-900/50"
+            className="fixed inset-0 bg-titanium-950/60"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <aside className="relative w-72 max-w-[85vw] bg-white dark:bg-slate-900 h-full flex flex-col border-r border-slate-200 dark:border-slate-800 z-10">
-            <div className="h-14 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
-              <span className="text-sm font-bold truncate">{shop.shopName}</span>
+          <aside className="relative w-72 max-w-[85vw] bg-white dark:bg-titanium-900 h-full flex flex-col border-r border-titanium-200 dark:border-titanium-800 z-10">
+            <div className="h-14 px-4 flex items-center justify-between border-b border-titanium-200 dark:border-titanium-800">
+              <span className="text-sm font-bold text-burgundy-800 dark:text-burgundy-300 truncate">
+                {shop.shopName}
+              </span>
               <button
                 onClick={() => setMobileMenuOpen(false)}
-                className="p-1.5 text-slate-500"
+                className="p-1.5 text-titanium-500"
                 aria-label={t('close')}
               >
                 <X className="w-5 h-5" />
@@ -191,8 +195,8 @@ function PosShell() {
                     onClick={() => handleSelectNav(item.id)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg text-left ${
                       active
-                        ? 'bg-teal-50 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300'
-                        : 'text-slate-600 dark:text-slate-400'
+                        ? 'bg-burgundy-50 dark:bg-burgundy-950 text-burgundy-800 dark:text-burgundy-300 font-semibold'
+                        : 'text-titanium-600 dark:text-titanium-400'
                     }`}
                   >
                     <Icon className="w-4 h-4 shrink-0" />
@@ -201,17 +205,17 @@ function PosShell() {
                 );
               })}
             </nav>
-            <div className="p-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
+            <div className="p-3 border-t border-titanium-200 dark:border-titanium-800 space-y-2">
               <div className="flex gap-2">
                 <button
                   onClick={() => setLang(lang === 'my' ? 'en' : 'my')}
-                  className="flex-1 py-2 text-xs font-medium bg-slate-100 dark:bg-slate-800 rounded-md"
+                  className="flex-1 py-2 text-xs font-medium bg-titanium-100 dark:bg-titanium-800 rounded-md"
                 >
                   {lang === 'my' ? 'Switch to EN' : 'မြန်မာဘာသာ'}
                 </button>
                 <button
                   onClick={toggleDarkMode}
-                  className="px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-md"
+                  className="px-3 py-2 bg-titanium-100 dark:bg-titanium-800 text-titanium-700 dark:text-burgundy-300 rounded-md"
                 >
                   {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
                 </button>
@@ -220,14 +224,14 @@ function PosShell() {
                 <button
                   onClick={loginWithGoogle}
                   disabled={signingIn}
-                  className="w-full py-2 text-xs font-semibold text-white bg-teal-700 disabled:opacity-50 rounded-lg"
+                  className="w-full py-2 text-xs font-semibold text-white bg-burgundy-700 dark:bg-burgundy-600 disabled:opacity-50 rounded-lg"
                 >
                   {signingIn ? '...' : t('signInGoogle')}
                 </button>
               ) : (
                 <button
                   onClick={logout}
-                  className="w-full py-2 text-xs font-medium text-red-600 bg-red-50 dark:bg-red-950/40 rounded-lg"
+                  className="w-full py-2 text-xs font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 rounded-lg"
                 >
                   {t('signOut')} ({user.email})
                 </button>
@@ -240,21 +244,21 @@ function PosShell() {
       {/* Main Workspace Column */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Clean Contextual Top Bar (Single Row) */}
-        <header className="h-16 sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between gap-4">
+        <header className="h-16 sticky top-0 z-30 bg-white/95 dark:bg-titanium-900/95 backdrop-blur border-b border-titanium-200 dark:border-titanium-800 px-4 sm:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 -ml-2 text-slate-600 dark:text-slate-300 rounded-lg"
+              className="lg:hidden p-2 -ml-2 text-titanium-600 dark:text-titanium-300 rounded-lg"
               aria-label="Open menu"
             >
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2 text-sm min-w-0">
-              <span className="hidden sm:inline text-slate-400 dark:text-slate-500 truncate max-w-[180px]">
+              <span className="hidden sm:inline text-titanium-500 dark:text-titanium-400 truncate max-w-[180px]">
                 {shop.shopName}
               </span>
-              <span className="hidden sm:inline text-slate-300 dark:text-slate-700">/</span>
-              <h1 className="font-semibold text-slate-900 dark:text-white truncate">
+              <span className="hidden sm:inline text-titanium-300 dark:text-titanium-700">/</span>
+              <h1 className="font-semibold text-titanium-900 dark:text-titanium-50 truncate">
                 {currentNav.label}
               </h1>
             </div>
@@ -263,7 +267,7 @@ function PosShell() {
           <div className="flex items-center gap-2.5 shrink-0">
             <button
               onClick={() => setActiveTab('pos')}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors whitespace-nowrap shrink-0"
             >
               <Plus className="w-4 h-4" />
               {t('quickSale')}
@@ -304,8 +308,8 @@ function PosShell() {
             toast.type === 'error'
               ? 'bg-red-50 dark:bg-red-950 text-red-800 dark:text-red-200 border-red-200 dark:border-red-800'
               : toast.type === 'info'
-              ? 'bg-slate-900 text-white border-slate-700'
-              : 'bg-emerald-50 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-100 border-emerald-200 dark:border-emerald-800'
+              ? 'bg-titanium-900 dark:bg-titanium-800 text-titanium-50 border-titanium-700'
+              : 'bg-burgundy-50 dark:bg-burgundy-950 text-burgundy-900 dark:text-burgundy-100 border-burgundy-200 dark:border-burgundy-800'
           }`}
         >
           {toast.text}
