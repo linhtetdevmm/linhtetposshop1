@@ -45,15 +45,20 @@ service cloud.firestore {
       );
     }
 
+    function isNotExpiredDoc(data) {
+      return data.expiresAt > request.time
+        && (!('subscription_expiry' in data) || (data.subscription_expiry is timestamp && data.subscription_expiry > request.time));
+    }
+
     function hasActiveLicense() {
       return isAdmin() || (
         isVerified()
         && exists(/databases/$(database)/documents/userLicenses/$(request.auth.uid))
         && get(/databases/$(database)/documents/userLicenses/$(request.auth.uid)).data.status == 'active'
-        && get(/databases/$(database)/documents/userLicenses/$(request.auth.uid)).data.expiresAt > request.time
+        && isNotExpiredDoc(get(/databases/$(database)/documents/userLicenses/$(request.auth.uid)).data)
         && exists(/databases/$(database)/documents/accessPasses/$(get(/databases/$(database)/documents/userLicenses/$(request.auth.uid)).data.passCode))
         && get(/databases/$(database)/documents/accessPasses/$(get(/databases/$(database)/documents/userLicenses/$(request.auth.uid)).data.passCode)).data.status == 'active'
-        && get(/databases/$(database)/documents/accessPasses/$(get(/databases/$(database)/documents/userLicenses/$(request.auth.uid)).data.passCode)).data.expiresAt > request.time
+        && isNotExpiredDoc(get(/databases/$(database)/documents/accessPasses/$(get(/databases/$(database)/documents/userLicenses/$(request.auth.uid)).data.passCode)).data)
       );
     }
 
@@ -78,13 +83,14 @@ service cloud.firestore {
     // -------------------------------------------------------------------------
     function isValidAccessPass(data) {
       return data.keys().hasAll(['code', 'label', 'status', 'durationDays', 'expiresAt', 'maxDevices', 'boundDevices', 'createdBy', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['code', 'label', 'note', 'status', 'durationDays', 'expiresAt', 'maxDevices', 'boundDevices', 'assignedUid', 'assignedEmail', 'createdBy', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['code', 'label', 'note', 'status', 'durationDays', 'expiresAt', 'subscription_expiry', 'maxDevices', 'boundDevices', 'assignedUid', 'assignedEmail', 'createdBy', 'createdAt', 'updatedAt'])
         && isValidPassCode(data.code)
         && data.label is string && data.label.size() >= 1 && data.label.size() <= 120
         && isOptString(data, 'note', 240)
         && data.status in ['active', 'revoked']
         && data.durationDays is number && data.durationDays >= 1 && data.durationDays <= 3650
         && data.expiresAt is timestamp
+        && (!('subscription_expiry' in data) || data.subscription_expiry is timestamp)
         && data.maxDevices is number && data.maxDevices >= 1 && data.maxDevices <= 50
         && data.boundDevices is list && data.boundDevices.size() <= 50
         && (data.boundDevices.size() == 0 || (data.boundDevices[0] is string && data.boundDevices[0].size() <= 128))
@@ -97,7 +103,7 @@ service cloud.firestore {
 
     function isValidUserLicense(data) {
       return data.keys().hasAll(['userId', 'email', 'passCode', 'label', 'status', 'expiresAt', 'maxDevices', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['userId', 'email', 'displayName', 'passCode', 'label', 'status', 'expiresAt', 'maxDevices', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'email', 'displayName', 'passCode', 'label', 'status', 'expiresAt', 'subscription_expiry', 'maxDevices', 'createdAt', 'updatedAt'])
         && isValidId(data.userId)
         && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
         && isOptString(data, 'displayName', 120)
@@ -105,6 +111,7 @@ service cloud.firestore {
         && data.label is string && data.label.size() >= 1 && data.label.size() <= 120
         && data.status in ['active', 'revoked']
         && data.expiresAt is timestamp
+        && (!('subscription_expiry' in data) || data.subscription_expiry is timestamp)
         && data.maxDevices is number && data.maxDevices >= 1 && data.maxDevices <= 50
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
@@ -190,7 +197,7 @@ service cloud.firestore {
 
     function isValidStockLog(data, shopId) {
       return data.keys().hasAll(['ownerId', 'productId', 'productName', 'type', 'quantity', 'previousStock', 'newStock', 'reason', 'date', 'createdAt'])
-        && data.keys().hasOnly(['ownerId', 'productId', 'productName', 'type', 'quantity', 'previousStock', 'newStock', 'reason', 'date', 'createdAt'])
+        && data.keys().hasOnly(['ownerId', 'productId', 'productName', 'type', 'quantity', 'previousStock', 'newStock', 'reason', 'date', 'createdAt', 'updatedAt'])
         && isValidId(data.ownerId)
         && data.ownerId == shopId
         && (data.ownerId == request.auth.uid || isAdmin())
@@ -202,7 +209,8 @@ service cloud.firestore {
         && data.newStock is number
         && data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 200
         && isValidDateString(data.date)
-        && data.createdAt is timestamp;
+        && data.createdAt is timestamp
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
     function isValidDebt(data, shopId) {
@@ -302,7 +310,7 @@ service cloud.firestore {
           (
             isVerified()
             && existing().status == 'active'
-            && existing().expiresAt > request.time
+            && isNotExpiredDoc(existing())
             && (!('assignedUid' in existing()) || existing().assignedUid == '' || existing().assignedUid == request.auth.uid)
             && incoming().assignedUid == request.auth.uid
             && incoming().assignedEmail == request.auth.token.email
@@ -338,9 +346,14 @@ service cloud.firestore {
             && incoming().status == 'active'
             && existsAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode))
             && getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.status == 'active'
-            && getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.expiresAt > request.time
+            && isNotExpiredDoc(getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data)
             && getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.assignedUid == request.auth.uid
             && incoming().expiresAt == getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.expiresAt
+            && (
+              !('subscription_expiry' in incoming())
+              || ('subscription_expiry' in getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data && incoming().subscription_expiry == getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.subscription_expiry)
+              || (!('subscription_expiry' in getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data) && incoming().subscription_expiry == getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.expiresAt)
+            )
             && incoming().maxDevices == getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.maxDevices
           )
         );
@@ -357,12 +370,17 @@ service cloud.firestore {
             && userId == request.auth.uid
             && incoming().email == request.auth.token.email
             && incoming().status == 'active'
-            && incoming().diff(existing()).affectedKeys().hasOnly(['passCode', 'label', 'status', 'expiresAt', 'maxDevices', 'updatedAt'])
+            && incoming().diff(existing()).affectedKeys().hasOnly(['passCode', 'label', 'status', 'expiresAt', 'subscription_expiry', 'maxDevices', 'updatedAt'])
             && existsAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode))
             && getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.status == 'active'
-            && getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.expiresAt > request.time
+            && isNotExpiredDoc(getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data)
             && getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.assignedUid == request.auth.uid
             && incoming().expiresAt == getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.expiresAt
+            && (
+              !('subscription_expiry' in incoming())
+              || ('subscription_expiry' in getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data && incoming().subscription_expiry == getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.subscription_expiry)
+              || (!('subscription_expiry' in getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data) && incoming().subscription_expiry == getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.expiresAt)
+            )
             && incoming().maxDevices == getAfter(/databases/$(database)/documents/accessPasses/$(incoming().passCode)).data.maxDevices
           )
         );
@@ -421,15 +439,14 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && (
             isAdmin() ||
-            (isShopOwner(shopId) && incoming().diff(existing()).affectedKeys().hasOnly(['sku', 'name', 'category', 'unit', 'costPrice', 'marginPercent', 'sellPrice', 'stock', 'minStock', 'updatedAt'])) ||
-            (isShopOwner(shopId) && incoming().diff(existing()).affectedKeys().hasOnly(['stock', 'updatedAt']))
+            (isShopOwner(shopId) && incoming().diff(existing()).affectedKeys().hasOnly(['sku', 'name', 'category', 'unit', 'costPrice', 'marginPercent', 'sellPrice', 'stock', 'minStock', 'updatedAt']))
           );
 
         allow delete: if isVerified() && isValidId(shopId) && isValidId(productId) && (isShopOwner(shopId) || isAdmin());
       }
 
       // -----------------------------------------------------------------------
-      // Sales Subcollection
+      // Sales Subcollection (Full Owner CRUD)
       // -----------------------------------------------------------------------
       match /sales/{saleId} {
         allow get: if isSignedIn() && isValidId(shopId) && isValidId(saleId) && (isShopOwner(shopId) || isAdmin());
@@ -452,14 +469,14 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && (
             isAdmin() ||
-            (isShopOwner(shopId) && incoming().diff(existing()).affectedKeys().hasOnly(['customerName', 'customerPhone', 'paidAmount', 'note', 'updatedAt']))
+            (isShopOwner(shopId) && incoming().diff(existing()).affectedKeys().hasOnly(['voucherNo', 'date', 'customerName', 'customerPhone', 'paymentMethod', 'items', 'subtotal', 'discount', 'total', 'totalCost', 'profit', 'paidAmount', 'note', 'updatedAt']))
           );
 
         allow delete: if isVerified() && isValidId(shopId) && isValidId(saleId) && (isShopOwner(shopId) || isAdmin());
       }
 
       // -----------------------------------------------------------------------
-      // Purchases Subcollection
+      // Purchases Subcollection (Full Owner CRUD)
       // -----------------------------------------------------------------------
       match /purchases/{purchaseId} {
         allow get: if isSignedIn() && isValidId(shopId) && isValidId(purchaseId) && (isShopOwner(shopId) || isAdmin());
@@ -482,14 +499,14 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && (
             isAdmin() ||
-            (isShopOwner(shopId) && incoming().diff(existing()).affectedKeys().hasOnly(['paidAmount', 'status', 'note', 'updatedAt']))
+            (isShopOwner(shopId) && incoming().diff(existing()).affectedKeys().hasOnly(['refNo', 'date', 'supplierName', 'items', 'totalAmount', 'paidAmount', 'status', 'note', 'updatedAt']))
           );
 
         allow delete: if isVerified() && isValidId(shopId) && isValidId(purchaseId) && (isShopOwner(shopId) || isAdmin());
       }
 
       // -----------------------------------------------------------------------
-      // Stock Logs Subcollection (Append-Only Audit Trail)
+      // Stock Logs Subcollection (Full Owner CRUD)
       // -----------------------------------------------------------------------
       match /stockLogs/{logId} {
         allow get: if isSignedIn() && isValidId(shopId) && isValidId(logId) && (isShopOwner(shopId) || isAdmin());
@@ -502,12 +519,24 @@ service cloud.firestore {
           && incoming().createdAt == request.time
           && (isShopOwner(shopId) || isAdmin());
 
-        allow update: if false;
+        allow update: if isVerified()
+          && isValidId(shopId)
+          && isValidId(logId)
+          && isValidStockLog(incoming(), shopId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().productId == existing().productId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            isAdmin() ||
+            (isShopOwner(shopId) && incoming().diff(existing()).affectedKeys().hasOnly(['productName', 'type', 'quantity', 'previousStock', 'newStock', 'reason', 'date', 'updatedAt']))
+          );
+
         allow delete: if isVerified() && isValidId(shopId) && isValidId(logId) && (isShopOwner(shopId) || isAdmin());
       }
 
       // -----------------------------------------------------------------------
-      // Debts Subcollection (Terminal State Locked on 'settled')
+      // Debts Subcollection (Full Owner CRUD)
       // -----------------------------------------------------------------------
       match /debts/{debtId} {
         allow get: if isSignedIn() && isValidId(shopId) && isValidId(debtId) && (isShopOwner(shopId) || isAdmin());
@@ -530,14 +559,14 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && (
             isAdmin() ||
-            (isShopOwner(shopId) && existing().status != 'settled' && incoming().diff(existing()).affectedKeys().hasOnly(['paidAmount', 'remainingAmount', 'status', 'dueDate', 'note', 'updatedAt']))
+            (isShopOwner(shopId) && incoming().diff(existing()).affectedKeys().hasOnly(['type', 'partyName', 'phone', 'referenceNo', 'totalAmount', 'paidAmount', 'remainingAmount', 'dueDate', 'status', 'note', 'updatedAt']))
           );
 
         allow delete: if isVerified() && isValidId(shopId) && isValidId(debtId) && (isShopOwner(shopId) || isAdmin());
       }
 
       // -----------------------------------------------------------------------
-      // Expenses Subcollection
+      // Expenses Subcollection (Full Owner CRUD)
       // -----------------------------------------------------------------------
       match /expenses/{expenseId} {
         allow get: if isSignedIn() && isValidId(shopId) && isValidId(expenseId) && (isShopOwner(shopId) || isAdmin());
@@ -567,7 +596,7 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
-      // Deliveries Subcollection (Terminal State Locked on 'delivered'/'cancelled')
+      // Deliveries Subcollection (Full Owner CRUD)
       // -----------------------------------------------------------------------
       match /deliveries/{deliveryId} {
         allow get: if isSignedIn() && isValidId(shopId) && isValidId(deliveryId) && (isShopOwner(shopId) || isAdmin());
@@ -590,7 +619,7 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && (
             isAdmin() ||
-            (isShopOwner(shopId) && !(existing().status in ['delivered', 'cancelled']) && incoming().diff(existing()).affectedKeys().hasOnly(['courierName', 'deliveryFee', 'codAmount', 'status', 'address', 'phone', 'note', 'updatedAt']))
+            (isShopOwner(shopId) && incoming().diff(existing()).affectedKeys().hasOnly(['voucherNo', 'date', 'customerName', 'phone', 'address', 'courierName', 'deliveryFee', 'codAmount', 'status', 'note', 'updatedAt']))
           );
 
         allow delete: if isVerified() && isValidId(shopId) && isValidId(deliveryId) && (isShopOwner(shopId) || isAdmin());

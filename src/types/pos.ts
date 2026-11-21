@@ -29,6 +29,7 @@ export interface AccessPass {
   status: 'active' | 'revoked';
   durationDays: number;
   expiresAtMs: number;
+  subscriptionExpiryMs?: number;
   maxDevices: number;
   boundDevices: string[];
   assignedUid: string;
@@ -46,6 +47,7 @@ export interface UserLicense {
   label: string;
   status: 'active' | 'revoked';
   expiresAtMs: number;
+  subscriptionExpiryMs?: number;
   maxDevices: number;
   createdAtMs?: number;
   updatedAtMs?: number;

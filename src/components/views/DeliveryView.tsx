@@ -1,16 +1,17 @@
 import React, { useMemo, useState } from 'react';
-import { CheckCircle2, Plus, Trash2, Truck, X } from 'lucide-react';
-import type { DeliveryStatus } from '../../types/pos';
+import { CheckCircle2, Pencil, Plus, Trash2, Truck, X } from 'lucide-react';
+import type { Delivery, DeliveryStatus } from '../../types/pos';
 import { usePos } from '../../context/PosContext';
 import { useT } from '../../i18n/translations';
 import { formatMMK, generateVoucherNo, getTodayISO } from '../../lib/format';
 
 export const DeliveryView: React.FC = () => {
-  const { deliveries, lang, createDelivery, updateDeliveryStatus, deleteDelivery } = usePos();
+  const { deliveries, lang, createDelivery, updateDelivery, updateDeliveryStatus, deleteDelivery } = usePos();
   const t = useT(lang);
 
   const [statusFilter, setStatusFilter] = useState<'all' | DeliveryStatus>('all');
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [voucherNo, setVoucherNo] = useState(generateVoucherNo('DLV'));
   const [date, setDate] = useState(getTodayISO());
@@ -20,6 +21,7 @@ export const DeliveryView: React.FC = () => {
   const [courierName, setCourierName] = useState('Royal Express');
   const [deliveryFee, setDeliveryFee] = useState('3000');
   const [codAmount, setCodAmount] = useState('0');
+  const [status, setStatus] = useState<DeliveryStatus>('pending');
   const [note, setNote] = useState('');
 
   const filtered = useMemo(() => {
@@ -27,10 +29,40 @@ export const DeliveryView: React.FC = () => {
     return deliveries.filter((d) => d.status === statusFilter);
   }, [deliveries, statusFilter]);
 
+  const openAdd = () => {
+    setEditingId(null);
+    setVoucherNo(generateVoucherNo('DLV'));
+    setDate(getTodayISO());
+    setCustomerName('');
+    setPhone('');
+    setAddress('');
+    setCourierName('Royal Express');
+    setDeliveryFee('3000');
+    setCodAmount('0');
+    setStatus('pending');
+    setNote('');
+    setModalOpen(true);
+  };
+
+  const openEdit = (d: Delivery) => {
+    setEditingId(d.id);
+    setVoucherNo(d.voucherNo);
+    setDate(d.date);
+    setCustomerName(d.customerName);
+    setPhone(d.phone);
+    setAddress(d.address);
+    setCourierName(d.courierName);
+    setDeliveryFee(String(d.deliveryFee));
+    setCodAmount(String(d.codAmount));
+    setStatus(d.status);
+    setNote(d.note);
+    setModalOpen(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customerName.trim() || !address.trim()) return;
-    await createDelivery({
+    const payload = {
       voucherNo: voucherNo.trim() || generateVoucherNo('DLV'),
       date,
       customerName: customerName.trim(),
@@ -39,16 +71,16 @@ export const DeliveryView: React.FC = () => {
       courierName: courierName.trim() || 'Courier',
       deliveryFee: Number(deliveryFee) || 0,
       codAmount: Number(codAmount) || 0,
-      status: 'pending',
+      status,
       note: note.trim(),
-    });
+    };
+    if (editingId) {
+      await updateDelivery(editingId, payload);
+    } else {
+      await createDelivery(payload);
+    }
     setModalOpen(false);
-    setVoucherNo(generateVoucherNo('DLV'));
-    setCustomerName('');
-    setPhone('');
-    setAddress('');
-    setCodAmount('0');
-    setNote('');
+    setEditingId(null);
   };
 
   return (
@@ -71,7 +103,7 @@ export const DeliveryView: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setModalOpen(true)}
+          onClick={openAdd}
           className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg whitespace-nowrap transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -157,6 +189,14 @@ export const DeliveryView: React.FC = () => {
                           </button>
                         )}
                         <button
+                          onClick={() => openEdit(d)}
+                          className="text-titanium-400 hover:text-burgundy-700 dark:hover:text-burgundy-300"
+                          aria-label={t('edit')}
+                          title={t('edit')}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
                           onClick={() => deleteDelivery(d.id)}
                           className="text-titanium-400 hover:text-red-600 dark:hover:text-red-400"
                           aria-label={t('delete')}
@@ -187,7 +227,9 @@ export const DeliveryView: React.FC = () => {
             className="w-full max-w-lg bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl overflow-hidden my-auto"
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-titanium-200 dark:border-titanium-800">
-              <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">{t('addDelivery')}</h3>
+              <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">
+                {editingId ? `${t('edit')} ${t('navDelivery')}` : t('addDelivery')}
+              </h3>
               <button type="button" onClick={() => setModalOpen(false)} className="text-titanium-500 hover:text-titanium-800 dark:hover:text-titanium-200">
                 <X className="w-4 h-4" />
               </button>
@@ -273,13 +315,28 @@ export const DeliveryView: React.FC = () => {
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('note')}</label>
-                <input
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('status')}</label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as DeliveryStatus)}
+                    className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                  >
+                    <option value="pending">{t('pending')}</option>
+                    <option value="dispatched">{t('dispatched')}</option>
+                    <option value="delivered">{t('delivered')}</option>
+                    <option value="cancelled">{t('cancelled')}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('note')}</label>
+                  <input
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                  />
+                </div>
               </div>
             </div>
             <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-titanium-200 dark:border-titanium-800">

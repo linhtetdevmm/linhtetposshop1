@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
-import type { PurchaseItem } from '../../types/pos';
+import { Pencil, Plus, Trash2, X } from 'lucide-react';
+import type { Purchase, PurchaseItem } from '../../types/pos';
 import { usePos } from '../../context/PosContext';
 import { useT } from '../../i18n/translations';
 import { formatMMK, getTodayISO } from '../../lib/format';
 
 export const PurchasesView: React.FC = () => {
-  const { purchases, products, lang, createPurchase, deletePurchase } = usePos();
+  const { purchases, products, lang, createPurchase, updatePurchase, deletePurchase } = usePos();
   const t = useT(lang);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [refNo, setRefNo] = useState('');
   const [supplierName, setSupplierName] = useState('');
   const [date, setDate] = useState(getTodayISO());
   const [status, setStatus] = useState<'paid' | 'credit'>('paid');
@@ -20,6 +22,36 @@ export const PurchasesView: React.FC = () => {
   const [selectedProdId, setSelectedProdId] = useState('');
   const [qty, setQty] = useState('10');
   const [costPrice, setCostPrice] = useState('');
+
+  const openAdd = () => {
+    setEditingId(null);
+    setRefNo('');
+    setSupplierName('');
+    setDate(getTodayISO());
+    setStatus('paid');
+    setPaidAmount('');
+    setNote('');
+    setItems([]);
+    setSelectedProdId('');
+    setQty('10');
+    setCostPrice('');
+    setModalOpen(true);
+  };
+
+  const openEdit = (pur: Purchase) => {
+    setEditingId(pur.id);
+    setRefNo(pur.refNo);
+    setSupplierName(pur.supplierName);
+    setDate(pur.date);
+    setStatus(pur.status);
+    setPaidAmount(String(pur.paidAmount));
+    setNote(pur.note);
+    setItems(pur.items.map((it) => ({ ...it })));
+    setSelectedProdId('');
+    setQty('10');
+    setCostPrice('');
+    setModalOpen(true);
+  };
 
   const handleSelectProduct = (prodId: string) => {
     setSelectedProdId(prodId);
@@ -48,20 +80,42 @@ export const PurchasesView: React.FC = () => {
     setCostPrice('');
   };
 
+  const updateLine = (idx: number, nextQty: number, nextCost: number) => {
+    const q = Math.max(1, nextQty);
+    const c = Math.max(0, nextCost);
+    setItems((prev) =>
+      prev.map((it, i) => (i === idx ? { ...it, qty: q, costPrice: c, lineTotal: q * c } : it))
+    );
+  };
+
   const totalAmount = items.reduce((s, it) => s + it.lineTotal, 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supplierName.trim() || items.length === 0) return;
-    await createPurchase({
-      supplierName: supplierName.trim(),
-      date,
-      items,
-      paidAmount: status === 'paid' ? totalAmount : Number(paidAmount) || 0,
-      status,
-      note,
-    });
+    const effectivePaid = status === 'paid' ? totalAmount : Number(paidAmount) || 0;
+    if (editingId) {
+      await updatePurchase(editingId, {
+        refNo: refNo.trim() || 'PO',
+        supplierName: supplierName.trim(),
+        date,
+        items,
+        paidAmount: effectivePaid,
+        status,
+        note,
+      });
+    } else {
+      await createPurchase({
+        supplierName: supplierName.trim(),
+        date,
+        items,
+        paidAmount: effectivePaid,
+        status,
+        note,
+      });
+    }
     setModalOpen(false);
+    setEditingId(null);
     setSupplierName('');
     setItems([]);
     setPaidAmount('');
@@ -80,7 +134,7 @@ export const PurchasesView: React.FC = () => {
           </span>
         </div>
         <button
-          onClick={() => setModalOpen(true)}
+          onClick={openAdd}
           className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors whitespace-nowrap"
         >
           <Plus className="w-4 h-4" />
@@ -136,7 +190,14 @@ export const PurchasesView: React.FC = () => {
                   <td className="px-4 py-3 text-right font-mono-num text-titanium-600 dark:text-titanium-400 whitespace-nowrap">
                     {formatMMK(pur.paidAmount)}
                   </td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="px-5 py-3 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => openEdit(pur)}
+                      className="inline-flex items-center text-titanium-500 hover:text-burgundy-700 dark:hover:text-burgundy-300 mr-3"
+                      aria-label={t('edit')}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
                     <button
                       onClick={() => deletePurchase(pur.id)}
                       className="inline-flex items-center text-titanium-400 hover:text-red-600 dark:hover:text-red-400"
@@ -170,14 +231,31 @@ export const PurchasesView: React.FC = () => {
             className="w-full max-w-2xl bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl overflow-hidden my-auto"
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-titanium-200 dark:border-titanium-800">
-              <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">{t('newPurchase')}</h3>
+              <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">
+                {editingId
+                  ? lang === 'my'
+                    ? 'အဝယ်စာရင်း ပြင်ဆင်ရန်'
+                    : 'Edit Purchase Order'
+                  : t('newPurchase')}
+              </h3>
               <button type="button" onClick={() => setModalOpen(false)} className="p-1 text-titanium-500 hover:text-titanium-800 dark:hover:text-titanium-200">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="p-5 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className={`grid grid-cols-1 ${editingId ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-3`}>
+                {editingId && (
+                  <div>
+                    <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('refNo')}</label>
+                    <input
+                      required
+                      value={refNo}
+                      onChange={(e) => setRefNo(e.target.value)}
+                      className="w-full px-3 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                    />
+                  </div>
+                )}
                 <div className="sm:col-span-2">
                   <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('supplierName')}</label>
                   <input
@@ -253,15 +331,29 @@ export const PurchasesView: React.FC = () => {
                 {items.length > 0 && (
                   <div className="divide-y divide-titanium-200 dark:divide-titanium-800 text-xs pt-1">
                     {items.map((it, idx) => (
-                      <div key={idx} className="py-2 flex items-center justify-between gap-2">
-                        <span className="font-medium text-titanium-800 dark:text-titanium-200 truncate">
+                      <div key={idx} className="py-2 flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium text-titanium-800 dark:text-titanium-200 truncate flex-1 min-w-[120px]">
                           {it.name}
                         </span>
-                        <div className="flex items-center gap-3 shrink-0 font-mono-num">
-                          <span>
-                            {it.qty} × {formatMMK(it.costPrice)}
-                          </span>
-                          <span className="font-semibold">{formatMMK(it.lineTotal)}</span>
+                        <div className="flex items-center gap-2 shrink-0 font-mono-num">
+                          <input
+                            type="number"
+                            min={1}
+                            value={it.qty}
+                            onChange={(e) => updateLine(idx, Number(e.target.value) || 1, it.costPrice)}
+                            className="w-16 px-2 py-1 text-xs bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-700 rounded text-right"
+                            aria-label="Quantity"
+                          />
+                          <span>×</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={it.costPrice}
+                            onChange={(e) => updateLine(idx, it.qty, Number(e.target.value) || 0)}
+                            className="w-24 px-2 py-1 text-xs bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-700 rounded text-right"
+                            aria-label="Cost price"
+                          />
+                          <span className="font-semibold w-24 text-right">{formatMMK(it.lineTotal)}</span>
                           <button
                             type="button"
                             onClick={() => setItems((prev) => prev.filter((_, i) => i !== idx))}
@@ -333,7 +425,7 @@ export const PurchasesView: React.FC = () => {
                 disabled={items.length === 0}
                 className="px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-40 rounded-lg"
               >
-                {t('recordPurchase')}
+                {editingId ? t('save') : t('recordPurchase')}
               </button>
             </div>
           </form>

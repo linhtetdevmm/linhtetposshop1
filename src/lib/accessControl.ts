@@ -51,8 +51,20 @@ export function normalizePassCode(raw: string): string {
 
 export function timestampToMs(val: unknown): number {
   if (!val) return 0;
-  if (typeof val === 'number') return val;
-  if (val instanceof Date) return val.getTime();
+  if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+  if (val instanceof Date) {
+    const ms = val.getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return 0;
+    // Support YYYY-MM-DD as end-of-day local time, or full ISO datetime strings
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(trimmed)
+      ? Date.parse(`${trimmed}T23:59:59`)
+      : Date.parse(trimmed);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
   if (typeof val === 'object' && val !== null) {
     const maybe = val as { toMillis?: () => number; seconds?: number };
     if (typeof maybe.toMillis === 'function') return maybe.toMillis();
@@ -61,10 +73,23 @@ export function timestampToMs(val: unknown): number {
   return 0;
 }
 
+export function resolveSubscriptionExpiryMs(data: Record<string, unknown> | undefined | null): number {
+  if (!data) return 0;
+  const subMs = timestampToMs(data.subscription_expiry);
+  const expMs = timestampToMs(data.expiresAt);
+  if (subMs > 0 && expMs > 0) return Math.min(subMs, expMs);
+  return subMs || expMs || 0;
+}
+
 export function getRemainingDays(expiresAtMs: number, nowMs = Date.now()): number {
   const diff = expiresAtMs - nowMs;
   if (diff <= 0) return 0;
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
+}
+
+export function getExpiredDaysAgo(expiresAtMs: number, nowMs = Date.now()): number {
+  if (!expiresAtMs || expiresAtMs > nowMs) return 0;
+  return Math.floor((nowMs - expiresAtMs) / (1000 * 60 * 60 * 24));
 }
 
 export function formatExpiryDate(ms: number): string {

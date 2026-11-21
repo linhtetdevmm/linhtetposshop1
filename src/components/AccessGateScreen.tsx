@@ -1,17 +1,26 @@
 import React, { useState } from 'react';
 import {
   AlertTriangle,
+  CalendarClock,
+  Check,
+  Copy,
   Globe,
   KeyRound,
   Lock,
   LogIn,
   LogOut,
   Moon,
+  RefreshCw,
   ShieldCheck,
   Sun,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
-import { formatExpiryDate, normalizePassCode } from '../lib/accessControl';
+import {
+  formatExpiryDate,
+  getExpiredDaysAgo,
+  normalizePassCode,
+  PRIMARY_ADMIN_EMAIL,
+} from '../lib/accessControl';
 
 export const AccessGateScreen: React.FC = () => {
   const {
@@ -23,6 +32,9 @@ export const AccessGateScreen: React.FC = () => {
     signingIn,
     accessStatus,
     activeLicense,
+    subscriptionExpiry,
+    isSubscriptionExpired,
+    refreshSubscriptionStatus,
     loginWithGoogle,
     logout,
     redeemAccessPass,
@@ -30,7 +42,14 @@ export const AccessGateScreen: React.FC = () => {
 
   const [passInput, setPassInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [checkingRenewal, setCheckingRenewal] = useState(false);
+  const [renewalInfoMsg, setRenewalInfoMsg] = useState<string | null>(null);
+  const [copiedRequest, setCopiedRequest] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const effectiveExpiryMs = subscriptionExpiry ?? activeLicense?.expiresAtMs ?? 0;
+  const expiredState = accessStatus === 'expired' || isSubscriptionExpired;
+  const expiredDaysAgo = getExpiredDaysAgo(effectiveExpiryMs);
 
   const handleSubmitPass = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +64,7 @@ export const AccessGateScreen: React.FC = () => {
     }
     setSubmitting(true);
     setErrorMsg(null);
+    setRenewalInfoMsg(null);
     try {
       const res = await redeemAccessPass(cleaned);
       if (!res.ok) {
@@ -57,24 +77,50 @@ export const AccessGateScreen: React.FC = () => {
     }
   };
 
-  const statusNotice = (() => {
-    if (accessStatus === 'expired') {
-      return {
-        tone: 'error' as const,
-        title: lang === 'my' ? 'သက်တမ်းကုန်ဆုံးသွားပါပြီ' : 'Access Pass Expired',
-        desc:
+  const handleCheckRenewal = async () => {
+    setCheckingRenewal(true);
+    setRenewalInfoMsg(null);
+    setErrorMsg(null);
+    try {
+      const unlocked = await refreshSubscriptionStatus();
+      if (!unlocked) {
+        setRenewalInfoMsg(
           lang === 'my'
-            ? `သင့် Access Pass (${activeLicense?.passCode || ''}) သည် ${formatExpiryDate(
-                activeLicense?.expiresAtMs || 0
-              )} တွင် သက်တမ်းကုန်ဆုံးသွားပါပြီ။ ဆက်လက်အသုံးပြုရန် Admin ထံမှ သက်တမ်းတိုးခြင်း သို့မဟုတ် Pass အသစ်ထည့်သွင်းပေးပါ။`
-            : `Your pass (${activeLicense?.passCode || ''}) expired on ${formatExpiryDate(
-                activeLicense?.expiresAtMs || 0
-              )}. Ask Admin to extend your license or enter a new Access Pass below.`,
-      };
+            ? 'သက်တမ်းတိုးမှု မတွေ့ရှိသေးပါ။ Admin မှ သက်တမ်းတိုးပြီးပါက ဤခလုတ်ကို ထပ်နှိပ်၍ စစ်ဆေးနိုင်ပါသည်။'
+            : 'No active renewal found yet. Once Admin extends your subscription, tap Check Again.'
+        );
+      }
+    } finally {
+      setCheckingRenewal(false);
     }
+  };
+
+  const handleCopyRenewalRequest = async () => {
+    const expiryLabel = formatExpiryDate(effectiveExpiryMs);
+    const requestText = [
+      'ShwePOS Subscription Renewal Request',
+      `Gmail: ${user?.email || ''}`,
+      activeLicense?.passCode ? `Current Pass: ${activeLicense.passCode}` : null,
+      effectiveExpiryMs ? `Expired On: ${expiryLabel}` : null,
+      lang === 'my'
+        ? 'ShwePOS လိုင်စင် သက်တမ်းတိုးပေးရန် တောင်းဆိုအပ်ပါသည်။'
+        : 'Please extend my ShwePOS subscription license.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      await navigator.clipboard.writeText(requestText);
+      setCopiedRequest(true);
+      window.setTimeout(() => setCopiedRequest(false), 2400);
+    } catch {
+      setRenewalInfoMsg(requestText);
+    }
+  };
+
+  const nonExpiredAlert = (() => {
     if (accessStatus === 'revoked') {
       return {
-        tone: 'error' as const,
         title: lang === 'my' ? 'ဝင်ခွင့် ပိတ်ထားပါသည်' : 'Access Suspended by Admin',
         desc:
           lang === 'my'
@@ -84,7 +130,6 @@ export const AccessGateScreen: React.FC = () => {
     }
     if (accessStatus === 'device_limit') {
       return {
-        tone: 'error' as const,
         title: lang === 'my' ? 'စက်အရေအတွက် ပြည့်နေပါသည်' : 'Device Limit Reached',
         desc:
           lang === 'my'
@@ -103,7 +148,7 @@ export const AccessGateScreen: React.FC = () => {
             <ShieldCheck className="w-5 h-5 text-burgundy-700 dark:text-burgundy-300 animate-pulse" />
           </div>
           <p className="text-xs font-medium text-titanium-600 dark:text-titanium-400">
-            {lang === 'my' ? 'ဝင်ခွင့်လိုင်စင် စစ်ဆေးနေပါသည်...' : 'Verifying access license...'}
+            {lang === 'my' ? 'ဝင်ခွင့်လိုင်စင် စစ်ဆေးနေပါသည်...' : 'Verifying subscription license...'}
           </p>
         </div>
       </div>
@@ -123,7 +168,13 @@ export const AccessGateScreen: React.FC = () => {
               ShwePOS
             </div>
             <div className="text-[11px] text-titanium-500 dark:text-titanium-400">
-              {lang === 'my' ? 'လုံခြုံရေး ဝင်ခွင့်စစ်ဆေးမှု' : 'Authorized Access Gate'}
+              {expiredState
+                ? lang === 'my'
+                  ? 'လိုင်စင် သက်တမ်းတိုးရန်'
+                  : 'Subscription Renewal'
+                : lang === 'my'
+                ? 'လုံခြုံရေး ဝင်ခွင့်စစ်ဆေးမှု'
+                : 'Authorized Access Gate'}
             </div>
           </div>
         </div>
@@ -152,11 +203,19 @@ export const AccessGateScreen: React.FC = () => {
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
         <div className="w-full max-w-md bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-2xl shadow-sm p-6 sm:p-8 space-y-6">
           <div className="space-y-2 text-center">
-            <div className="mx-auto w-12 h-12 rounded-xl bg-burgundy-50 dark:bg-burgundy-950 border border-burgundy-200 dark:border-burgundy-900 flex items-center justify-center">
-              {user ? (
-                <KeyRound className="w-6 h-6 text-burgundy-700 dark:text-burgundy-300" />
-              ) : (
+            <div
+              className={`mx-auto w-12 h-12 rounded-xl border flex items-center justify-center ${
+                expiredState
+                  ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800'
+                  : 'bg-burgundy-50 dark:bg-burgundy-950 border-burgundy-200 dark:border-burgundy-900'
+              }`}
+            >
+              {!user ? (
                 <ShieldCheck className="w-6 h-6 text-burgundy-700 dark:text-burgundy-300" />
+              ) : expiredState ? (
+                <CalendarClock className="w-6 h-6 text-amber-700 dark:text-amber-300" />
+              ) : (
+                <KeyRound className="w-6 h-6 text-burgundy-700 dark:text-burgundy-300" />
               )}
             </div>
             <h1 className="text-lg font-bold tracking-tight text-titanium-900 dark:text-titanium-50">
@@ -164,6 +223,10 @@ export const AccessGateScreen: React.FC = () => {
                 ? lang === 'my'
                   ? 'ShwePOS ဝင်ခွင့်စစ်ဆေးခြင်း'
                   : 'Sign In to ShwePOS'
+                : expiredState
+                ? lang === 'my'
+                  ? 'သက်တမ်းတိုးရန် (Renew Subscription)'
+                  : 'Renew Subscription'
                 : lang === 'my'
                 ? 'Admin Access Pass ထည့်သွင်းပါ'
                 : 'Enter Admin Access Pass'}
@@ -173,6 +236,10 @@ export const AccessGateScreen: React.FC = () => {
                 ? lang === 'my'
                   ? 'Link ရှိရုံဖြင့် ဝင်ရောက်၍ မရပါ။ သင့်ကိုယ်ပိုင် Gmail ဖြင့်ဝင်ပြီး Admin ပေးထားသော Random Pass ဖြင့် သတ်မှတ်သက်တမ်းအတွင်း အသုံးပြုနိုင်ပါသည်။'
                   : 'This workspace is protected. Sign in with your Google Account and activate with an Admin-issued Access Pass.'
+                : expiredState
+                ? lang === 'my'
+                  ? 'သင့် POS လိုင်စင်သက်တမ်း ကုန်ဆုံးသွားပါပြီ။ သင့်ဆိုင်၏ အရောင်းနှင့် စတော့ဒေတာအားလုံးကို လုံခြုံစွာ သိမ်းဆည်းထားပေးပြီး သက်တမ်းတိုးပြီးသည်နှင့် ချက်ချင်းပြန်လည်အသုံးပြုနိုင်ပါမည်။'
+                  : 'Your POS subscription has ended. All of your shop records, inventory, and sales remain safely saved and will unlock as soon as you renew.'
                 : lang === 'my'
                 ? 'သင့် Gmail အတွက် သီးသန့် POS ဒေတာသိမ်းဆည်းပေးမည်ဖြစ်ပြီး Admin သတ်မှတ်ထားသော သက်တမ်းအတွင်းသာ ဝင်ခွင့်ရှိပါမည်။'
                 : 'Your POS data is strictly isolated to your Gmail account and active for your Admin-assigned pass duration.'}
@@ -237,24 +304,111 @@ export const AccessGateScreen: React.FC = () => {
                 </button>
               </div>
 
-              {/* Status Alert if Expired / Revoked / Device Limit */}
-              {statusNotice && (
+              {/* Friendly Renew Subscription Notice (Expired State) */}
+              {expiredState && (
+                <div className="p-4 rounded-xl bg-amber-50/80 dark:bg-amber-950/35 border border-amber-200 dark:border-amber-800/70 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-0.5">
+                      <div className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                        {lang === 'my'
+                          ? 'လိုင်စင်သက်တမ်း ကုန်ဆုံးနေပါသည်'
+                          : 'Your License Needs Renewal'}
+                      </div>
+                      <div className="text-[11px] text-amber-800/90 dark:text-amber-300/90">
+                        {lang === 'my'
+                          ? `သက်တမ်းကုန်ရက်: ${formatExpiryDate(effectiveExpiryMs)}${
+                              expiredDaysAgo > 0 ? ` (လွန်ခဲ့သော ${expiredDaysAgo} ရက်)` : ' (ယနေ့)'
+                            }`
+                          : `Expired on ${formatExpiryDate(effectiveExpiryMs)}${
+                              expiredDaysAgo > 0
+                                ? ` (${expiredDaysAgo} day${expiredDaysAgo === 1 ? '' : 's'} ago)`
+                                : ' (today)'
+                            }`}
+                      </div>
+                    </div>
+                    {activeLicense?.passCode && (
+                      <span className="text-[10px] font-mono-num px-2 py-0.5 rounded bg-white/80 dark:bg-titanium-900/80 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 shrink-0">
+                        {activeLicense.passCode}
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-amber-900/80 dark:text-amber-200/85 leading-relaxed">
+                    {lang === 'my'
+                      ? `Admin (${PRIMARY_ADMIN_EMAIL}) ထံ ဆက်သွယ်၍ သက်တမ်းတိုးနိုင်ပါသည် သို့မဟုတ် အောက်တွင် Renewal Pass အသစ်ထည့်သွင်း၍ ချက်ချင်းပြန်ဖွင့်နိုင်ပါသည်။`
+                      : `Contact Admin (${PRIMARY_ADMIN_EMAIL}) to extend your plan, or enter a new Access Pass below to continue immediately.`}
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={handleCopyRenewalRequest}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-semibold text-amber-950 dark:text-amber-100 bg-white dark:bg-titanium-900 hover:bg-amber-100/70 dark:hover:bg-titanium-800 border border-amber-300/80 dark:border-amber-800 rounded-lg transition-colors"
+                    >
+                      {copiedRequest ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          {lang === 'my' ? 'ကူးယူပြီးပါပြီ' : 'Copied Request'}
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          {lang === 'my' ? 'သက်တမ်းတိုးစာ ကူးမည်' : 'Copy Renewal Info'}
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleCheckRenewal}
+                      disabled={checkingRenewal}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-semibold text-burgundy-800 dark:text-burgundy-200 bg-burgundy-50 dark:bg-burgundy-950/60 hover:bg-burgundy-100/80 dark:hover:bg-burgundy-950 border border-burgundy-200 dark:border-burgundy-800 disabled:opacity-50 rounded-lg transition-colors"
+                    >
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 ${checkingRenewal ? 'animate-spin' : ''}`}
+                      />
+                      {checkingRenewal
+                        ? lang === 'my'
+                          ? 'စစ်ဆေးနေသည်...'
+                          : 'Checking...'
+                        : lang === 'my'
+                        ? 'ပြန်စစ်ဆေးမည်'
+                        : 'Check Renewal'}
+                    </button>
+                  </div>
+
+                  {renewalInfoMsg && (
+                    <p className="text-[11px] text-amber-900 dark:text-amber-200 bg-white/70 dark:bg-titanium-900/70 px-2.5 py-2 rounded-lg border border-amber-200/70 dark:border-amber-800/60 leading-relaxed">
+                      {renewalInfoMsg}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Status Alert for Revoked / Device Limit */}
+              {!expiredState && nonExpiredAlert && (
                 <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/70 space-y-1">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-red-800 dark:text-red-300">
                     <AlertTriangle className="w-4 h-4 shrink-0" />
-                    {statusNotice.title}
+                    {nonExpiredAlert.title}
                   </div>
                   <p className="text-[11px] text-red-700 dark:text-red-300/90 leading-relaxed">
-                    {statusNotice.desc}
+                    {nonExpiredAlert.desc}
                   </p>
                 </div>
               )}
 
-              {/* Pass Redemption Form */}
+              {/* Pass Redemption / Renewal Form */}
               <form onSubmit={handleSubmitPass} className="space-y-3">
                 <div>
                   <label className="block text-xs font-medium text-titanium-700 dark:text-titanium-300 mb-1.5">
-                    {lang === 'my' ? 'Random Access Pass ကုဒ်' : 'Random Access Pass Code'}
+                    {expiredState
+                      ? lang === 'my'
+                        ? 'သက်တမ်းတိုး Pass အသစ်ရှိပါက ထည့်သွင်းပါ'
+                        : 'Have a Renewal Access Pass?'
+                      : lang === 'my'
+                      ? 'Random Access Pass ကုဒ်'
+                      : 'Random Access Pass Code'}
                   </label>
                   <input
                     type="text"
@@ -287,6 +441,10 @@ export const AccessGateScreen: React.FC = () => {
                     ? lang === 'my'
                       ? 'စစ်ဆေးနေသည်...'
                       : 'Activating...'
+                    : expiredState
+                    ? lang === 'my'
+                      ? 'Pass အသစ်ဖြင့် သက်တမ်းတိုးပြီး ဝင်မည်'
+                      : 'Renew & Unlock POS'
                     : lang === 'my'
                     ? 'Pass အတည်ပြုပြီး ဝင်ရောက်မည်'
                     : 'Activate & Enter Workspace'}

@@ -24,7 +24,7 @@ import type { NavTab, Sale } from './types/pos';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PosProvider, usePos } from './context/PosContext';
 import { useT } from './i18n/translations';
-import { formatExpiryDate, getRemainingDays } from './lib/accessControl';
+import { formatExpiryDate } from './lib/accessControl';
 import { VoucherModal } from './components/VoucherModal';
 import { ConnectionStatusBadge } from './components/ConnectionStatusBadge';
 import { AccessGateScreen } from './components/AccessGateScreen';
@@ -51,7 +51,9 @@ function PosShell() {
     signingIn,
     isAdmin,
     accessStatus,
-    activeLicense,
+    subscriptionExpiry,
+    isSubscriptionExpired,
+    subscriptionDaysRemaining,
     adminTargetShopId,
     adminTargetShopLabel,
     adminSelectShop,
@@ -67,8 +69,8 @@ function PosShell() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [voucherSale, setVoucherSale] = useState<Sale | null>(null);
 
-  // Strict Access Gate: unauthorized or expired visitors cannot enter the POS shell
-  if (accessStatus !== 'granted') {
+  // Strict Access Gate: unauthorized or expired subscriptions cannot enter the POS shell
+  if (accessStatus !== 'granted' || isSubscriptionExpired) {
     return <AccessGateScreen />;
   }
 
@@ -95,7 +97,7 @@ function PosShell() {
   ];
 
   const currentNav = navItems.find((n) => n.id === activeTab) || navItems[0];
-  const remainingDays = activeLicense ? getRemainingDays(activeLicense.expiresAtMs) : null;
+  const remainingDays = subscriptionDaysRemaining;
 
   const handleSelectNav = (id: NavTab) => {
     setActiveTab(id);
@@ -112,15 +114,19 @@ function PosShell() {
             <div className="text-sm font-bold tracking-tight text-burgundy-800 dark:text-burgundy-300 truncate">
               {shop.shopName}
             </div>
-            <div className="text-[11px] text-titanium-500 dark:text-titanium-400 truncate">
+            <div
+              className={`text-[11px] truncate ${
+                !isAdmin && remainingDays !== null && remainingDays <= 5
+                  ? 'text-amber-700 dark:text-amber-300 font-medium'
+                  : 'text-titanium-500 dark:text-titanium-400'
+              }`}
+            >
               {isAdmin
+                ? 'Super Admin · MMK'
+                : remainingDays !== null && subscriptionExpiry
                 ? lang === 'my'
-                  ? 'Super Admin · MMK'
-                  : 'Super Admin · MMK'
-                : remainingDays !== null
-                ? lang === 'my'
-                  ? `${remainingDays} ရက်ကျန် (${formatExpiryDate(activeLicense!.expiresAtMs)})`
-                  : `${remainingDays}d left (${formatExpiryDate(activeLicense!.expiresAtMs)})`
+                  ? `${remainingDays} ရက်ကျန် (${formatExpiryDate(subscriptionExpiry)})`
+                  : `${remainingDays}d left (${formatExpiryDate(subscriptionExpiry)})`
                 : isCloudMode
                 ? `${t('cloudSynced')} · MMK`
                 : `${t('localDemoMode')} · MMK`}

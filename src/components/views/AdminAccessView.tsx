@@ -35,6 +35,7 @@ import {
   generateRandomPassCode,
   getRemainingDays,
   normalizePassCode,
+  resolveSubscriptionExpiryMs,
   timestampToMs,
 } from '../../lib/accessControl';
 import {
@@ -118,13 +119,15 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
         const list: AccessPass[] = snap.docs
           .map((d): AccessPass => {
             const p = d.data();
+            const expMs = resolveSubscriptionExpiryMs(p);
             return {
               code: String(p.code || d.id),
               label: String(p.label || ''),
               note: String(p.note || ''),
               status: p.status === 'revoked' ? 'revoked' : 'active',
               durationDays: Number(p.durationDays || 30),
-              expiresAtMs: timestampToMs(p.expiresAt),
+              expiresAtMs: expMs,
+              subscriptionExpiryMs: timestampToMs(p.subscription_expiry) || expMs,
               maxDevices: Number(p.maxDevices || 1),
               boundDevices: Array.isArray(p.boundDevices) ? p.boundDevices.map(String) : [],
               assignedUid: String(p.assignedUid || ''),
@@ -150,6 +153,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
         const list: UserLicense[] = snap.docs
           .map((d): UserLicense => {
             const x = d.data();
+            const expMs = resolveSubscriptionExpiryMs(x);
             return {
               userId: String(x.userId || d.id),
               email: String(x.email || ''),
@@ -157,7 +161,8 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
               passCode: String(x.passCode || ''),
               label: String(x.label || ''),
               status: x.status === 'revoked' ? 'revoked' : 'active',
-              expiresAtMs: timestampToMs(x.expiresAt),
+              expiresAtMs: expMs,
+              subscriptionExpiryMs: timestampToMs(x.subscription_expiry) || expMs,
               maxDevices: Number(x.maxDevices || 1),
               createdAtMs: timestampToMs(x.createdAt),
               updatedAtMs: timestampToMs(x.updatedAt),
@@ -272,13 +277,15 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
       const safeNote = clampString(note, 240);
       const safeMaxDev = clampNumber(maxDevices, 1, 50);
 
+      const expiryTs = Timestamp.fromMillis(expiresMs);
       await setDoc(doc(db, 'accessPasses', cleanCode), {
         code: cleanCode,
         label: safeLabel,
         note: safeNote,
         status: 'active',
         durationDays: calcDays,
-        expiresAt: Timestamp.fromMillis(expiresMs),
+        expiresAt: expiryTs,
+        subscription_expiry: expiryTs,
         maxDevices: safeMaxDev,
         boundDevices: [],
         assignedUid: '',
@@ -328,6 +335,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
         status: 'active',
         durationDays: clampNumber((p.durationDays || 30) + addDays, 1, 3650),
         expiresAt: nextTs,
+        subscription_expiry: nextTs,
         updatedAt: serverTimestamp(),
       });
       if (p.assignedUid) {
@@ -336,6 +344,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
           batch.update(doc(db, 'userLicenses', p.assignedUid), {
             status: 'active',
             expiresAt: nextTs,
+            subscription_expiry: nextTs,
             updatedAt: serverTimestamp(),
           });
         }
@@ -475,6 +484,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
         label: nextLabel,
         note: nextNote,
         expiresAt: nextTs,
+        subscription_expiry: nextTs,
         maxDevices: nextMaxDev,
         updatedAt: serverTimestamp(),
       });
@@ -484,6 +494,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
           batch.update(doc(db, 'userLicenses', editingPass.assignedUid), {
             label: nextLabel,
             expiresAt: nextTs,
+            subscription_expiry: nextTs,
             maxDevices: nextMaxDev,
             updatedAt: serverTimestamp(),
           });

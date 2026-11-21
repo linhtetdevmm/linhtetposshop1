@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Minus, Plus, Receipt, Search, ShoppingCart, Trash2, Truck } from 'lucide-react';
+import { Minus, Pencil, Plus, Receipt, Search, ShoppingCart, Trash2, Truck, X } from 'lucide-react';
 import type { PaymentMethod, Product, Sale, SaleItem } from '../../types/pos';
 import { usePos } from '../../context/PosContext';
 import { useT } from '../../i18n/translations';
@@ -10,7 +10,7 @@ interface PosSalesViewProps {
 }
 
 export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => {
-  const { products, sales, lang, createSale, deleteSale } = usePos();
+  const { products, sales, lang, createSale, updateSale, deleteSale } = usePos();
   const t = useT(lang);
 
   const [subTab, setSubTab] = useState<'counter' | 'history'>('counter');
@@ -32,6 +32,111 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
   const [submitting, setSubmitting] = useState(false);
 
   const [historySearch, setHistorySearch] = useState('');
+
+  // Edit Sale Modal State
+  const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [editVoucherNo, setEditVoucherNo] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editCustomerName, setEditCustomerName] = useState('');
+  const [editCustomerPhone, setEditCustomerPhone] = useState('');
+  const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>('cash');
+  const [editDiscount, setEditDiscount] = useState('0');
+  const [editPaidAmount, setEditPaidAmount] = useState('0');
+  const [editNote, setEditNote] = useState('');
+  const [editItems, setEditItems] = useState<SaleItem[]>([]);
+  const [editAddProdId, setEditAddProdId] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const openEditSale = (sale: Sale) => {
+    setEditingSale(sale);
+    setEditVoucherNo(sale.voucherNo);
+    setEditDate(sale.date);
+    setEditCustomerName(sale.customerName);
+    setEditCustomerPhone(sale.customerPhone);
+    setEditPaymentMethod(sale.paymentMethod);
+    setEditDiscount(String(sale.discount));
+    setEditPaidAmount(String(sale.paidAmount));
+    setEditNote(sale.note);
+    setEditItems(sale.items.map((item) => ({ ...item })));
+    setEditAddProdId(products[0]?.id || '');
+  };
+
+  const addEditSaleItem = () => {
+    const prod = products.find((p) => p.id === editAddProdId);
+    if (!prod) return;
+    setEditItems((prev) => {
+      const existing = prev.find((i) => i.productId === prod.id);
+      if (existing) {
+        return prev.map((i) =>
+          i.productId === prod.id
+            ? { ...i, qty: i.qty + 1, lineTotal: (i.qty + 1) * i.unitPrice }
+            : i
+        );
+      }
+      return [
+        ...prev,
+        {
+          productId: prod.id,
+          sku: prod.sku,
+          name: prod.name,
+          unit: prod.unit,
+          qty: 1,
+          costPrice: prod.costPrice,
+          unitPrice: prod.sellPrice,
+          lineTotal: prod.sellPrice,
+        },
+      ];
+    });
+  };
+
+  const updateEditSaleItem = (idx: number, field: 'qty' | 'unitPrice', val: number) => {
+    setEditItems((prev) =>
+      prev.map((item, i) => {
+        if (i !== idx) return item;
+        const nextQty = field === 'qty' ? Math.max(1, val) : item.qty;
+        const nextPrice = field === 'unitPrice' ? Math.max(0, val) : item.unitPrice;
+        return { ...item, qty: nextQty, unitPrice: nextPrice, lineTotal: nextQty * nextPrice };
+      })
+    );
+  };
+
+  const removeEditSaleItem = (idx: number) => {
+    setEditItems((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const editSubtotal = useMemo(
+    () => editItems.reduce((sum, i) => sum + i.lineTotal, 0),
+    [editItems]
+  );
+  const editDiscountNum = Math.min(editSubtotal, Math.max(0, Number(editDiscount) || 0));
+  const editTotal = Math.max(0, editSubtotal - editDiscountNum);
+  const editTotalCost = useMemo(
+    () => editItems.reduce((sum, i) => sum + i.costPrice * i.qty, 0),
+    [editItems]
+  );
+  const editProfit = editTotal - editTotalCost;
+
+  const handleSaveEditSale = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSale || editItems.length === 0 || savingEdit) return;
+    setSavingEdit(true);
+    try {
+      await updateSale(editingSale.id, {
+        voucherNo: editVoucherNo.trim() || editingSale.voucherNo,
+        date: editDate || editingSale.date,
+        customerName: editCustomerName.trim(),
+        customerPhone: editCustomerPhone.trim(),
+        paymentMethod: editPaymentMethod,
+        items: editItems,
+        discount: editDiscountNum,
+        paidAmount: Math.max(0, Number(editPaidAmount) || 0),
+        note: editNote.trim(),
+      });
+      setEditingSale(null);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   const categories = useMemo(() => {
     const set = new Set(products.map((p) => p.category));
@@ -563,6 +668,14 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
                         {t('voucher')}
                       </button>
                       <button
+                        onClick={() => openEditSale(sale)}
+                        className="inline-flex items-center text-titanium-400 hover:text-burgundy-700 dark:hover:text-burgundy-300 transition-colors mr-2.5"
+                        aria-label={t('edit')}
+                        title={t('edit')}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
                         onClick={() => deleteSale(sale.id)}
                         className="inline-flex items-center text-titanium-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                         aria-label={t('delete')}
@@ -575,6 +688,233 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {editingSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-titanium-950/60 p-4 overflow-y-auto">
+          <form
+            onSubmit={handleSaveEditSale}
+            className="w-full max-w-2xl bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl overflow-hidden my-auto"
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-titanium-200 dark:border-titanium-800">
+              <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">
+                {t('edit')} {t('salesHistory')} · {editingSale.voucherNo}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingSale(null)}
+                className="text-titanium-500 hover:text-titanium-800 dark:hover:text-titanium-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('voucherNo')}</label>
+                  <input
+                    required
+                    value={editVoucherNo}
+                    onChange={(e) => setEditVoucherNo(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('date')}</label>
+                  <input
+                    type="date"
+                    required
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('customerName')}</label>
+                  <input
+                    value={editCustomerName}
+                    onChange={(e) => setEditCustomerName(e.target.value)}
+                    placeholder={t('walkInCustomer')}
+                    className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('customerPhone')}</label>
+                  <input
+                    value={editCustomerPhone}
+                    onChange={(e) => setEditCustomerPhone(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                  />
+                </div>
+              </div>
+
+              {/* Editable Line Items */}
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-medium text-titanium-700 dark:text-titanium-300">
+                    {t('items')} ({editItems.length})
+                  </label>
+                  {products.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={editAddProdId}
+                        onChange={(e) => setEditAddProdId(e.target.value)}
+                        className="px-2.5 py-1.5 text-xs bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600 max-w-[200px]"
+                      >
+                        {products.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({formatMMK(p.sellPrice)})
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={addEditSaleItem}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 rounded-lg"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        {t('addItem')}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border border-titanium-200 dark:border-titanium-800 rounded-lg divide-y divide-titanium-100 dark:divide-titanium-800">
+                  {editItems.map((item, idx) => (
+                    <div
+                      key={`${item.productId}-${idx}`}
+                      className="p-2.5 flex flex-wrap items-center gap-2 justify-between"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-medium text-titanium-900 dark:text-titanium-100 truncate">
+                          {item.name}
+                        </div>
+                        <div className="text-[11px] font-mono-num text-titanium-500 dark:text-titanium-400">
+                          {item.sku} · {item.unit}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          value={item.qty}
+                          onChange={(e) => updateEditSaleItem(idx, 'qty', Number(e.target.value) || 1)}
+                          className="w-16 px-2 py-1 text-xs font-mono-num text-right bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-md"
+                          aria-label={t('qtyCol')}
+                        />
+                        <span className="text-xs text-titanium-400">×</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={item.unitPrice}
+                          onChange={(e) => updateEditSaleItem(idx, 'unitPrice', Number(e.target.value) || 0)}
+                          className="w-24 px-2 py-1 text-xs font-mono-num text-right bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-md"
+                          aria-label={t('sellPrice')}
+                        />
+                        <span className="w-24 text-right text-xs font-mono-num font-semibold text-titanium-900 dark:text-titanium-50">
+                          {formatMMK(item.lineTotal)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeEditSaleItem(idx)}
+                          disabled={editItems.length <= 1}
+                          className="text-titanium-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-30"
+                          aria-label={t('delete')}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('paymentMethod')}</label>
+                  <select
+                    value={editPaymentMethod}
+                    onChange={(e) => setEditPaymentMethod(e.target.value as PaymentMethod)}
+                    className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                  >
+                    <option value="cash">{t('cash')}</option>
+                    <option value="kbzpay">{t('kbzpay')}</option>
+                    <option value="wavepay">{t('wavepay')}</option>
+                    <option value="credit">{t('credit')}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('discount')}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editDiscount}
+                    onChange={(e) => setEditDiscount(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('paidAmount')}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editPaidAmount}
+                    onChange={(e) => setEditPaidAmount(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('note')}</label>
+                <input
+                  value={editNote}
+                  onChange={(e) => setEditNote(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                />
+              </div>
+
+              <div className="p-3 rounded-lg bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div>
+                  <span className="text-titanium-500 dark:text-titanium-400">{t('subtotal')}: </span>
+                  <span className="font-mono-num font-semibold text-titanium-900 dark:text-titanium-50">
+                    {formatMMK(editSubtotal)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-titanium-500 dark:text-titanium-400">{t('grandTotal')}: </span>
+                  <span className="font-mono-num font-bold text-burgundy-800 dark:text-burgundy-300">
+                    {formatMMK(editTotal)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-titanium-500 dark:text-titanium-400">{t('profit')}: </span>
+                  <span className="font-mono-num font-semibold text-emerald-700 dark:text-emerald-400">
+                    {editProfit >= 0 ? '+' : ''}{formatMMK(editProfit)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-titanium-200 dark:border-titanium-800">
+              <button
+                type="button"
+                onClick={() => setEditingSale(null)}
+                className="px-4 py-2 text-xs font-medium text-titanium-600 dark:text-titanium-300 hover:bg-titanium-100 dark:hover:bg-titanium-800 rounded-lg"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                type="submit"
+                disabled={editItems.length === 0 || savingEdit}
+                className="px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-45 rounded-lg"
+              >
+                {savingEdit ? '...' : t('save')}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

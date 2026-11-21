@@ -1,20 +1,21 @@
 import React, { useMemo, useState } from 'react';
-import { Banknote, Plus, Trash2, X } from 'lucide-react';
+import { Banknote, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { Debt } from '../../types/pos';
 import { usePos } from '../../context/PosContext';
 import { useT } from '../../i18n/translations';
 import { formatMMK, getTodayISO } from '../../lib/format';
 
 export const DebtsView: React.FC = () => {
-  const { debts, lang, createDebt, recordDebtPayment, deleteDebt } = usePos();
+  const { debts, lang, createDebt, updateDebt, recordDebtPayment, deleteDebt } = usePos();
   const t = useT(lang);
 
   const [filterType, setFilterType] = useState<'all' | 'receivable' | 'payable'>('all');
-  const [addOpen, setAddOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [payTarget, setPayTarget] = useState<Debt | null>(null);
   const [payAmount, setPayAmount] = useState('');
 
-  // Add form state
+  // Add / Edit form state
   const [type, setType] = useState<'receivable' | 'payable'>('receivable');
   const [partyName, setPartyName] = useState('');
   const [phone, setPhone] = useState('');
@@ -39,10 +40,36 @@ export const DebtsView: React.FC = () => {
     return debts.filter((d) => d.type === filterType);
   }, [debts, filterType]);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const openAdd = () => {
+    setEditingId(null);
+    setType('receivable');
+    setPartyName('');
+    setPhone('');
+    setReferenceNo('');
+    setTotalAmount('');
+    setPaidAmount('0');
+    setDueDate(getTodayISO());
+    setNote('');
+    setModalOpen(true);
+  };
+
+  const openEdit = (d: Debt) => {
+    setEditingId(d.id);
+    setType(d.type);
+    setPartyName(d.partyName);
+    setPhone(d.phone);
+    setReferenceNo(d.referenceNo);
+    setTotalAmount(String(d.totalAmount));
+    setPaidAmount(String(d.paidAmount));
+    setDueDate(d.dueDate);
+    setNote(d.note);
+    setModalOpen(true);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!partyName.trim()) return;
-    await createDebt({
+    const payload = {
       type,
       partyName: partyName.trim(),
       phone: phone.trim(),
@@ -51,14 +78,14 @@ export const DebtsView: React.FC = () => {
       paidAmount: Number(paidAmount) || 0,
       dueDate,
       note: note.trim(),
-    });
-    setAddOpen(false);
-    setPartyName('');
-    setPhone('');
-    setReferenceNo('');
-    setTotalAmount('');
-    setPaidAmount('0');
-    setNote('');
+    };
+    if (editingId) {
+      await updateDebt(editingId, payload);
+    } else {
+      await createDebt(payload);
+    }
+    setModalOpen(false);
+    setEditingId(null);
   };
 
   const handleRepay = async (e: React.FormEvent) => {
@@ -109,7 +136,7 @@ export const DebtsView: React.FC = () => {
           ))}
         </div>
         <button
-          onClick={() => setAddOpen(true)}
+          onClick={openAdd}
           className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg whitespace-nowrap transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -184,6 +211,13 @@ export const DebtsView: React.FC = () => {
                       </button>
                     )}
                     <button
+                      onClick={() => openEdit(debt)}
+                      className="inline-flex items-center text-titanium-500 hover:text-burgundy-700 dark:hover:text-burgundy-300 mr-3"
+                      aria-label={t('edit')}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
                       onClick={() => deleteDebt(debt.id)}
                       className="inline-flex items-center text-titanium-400 hover:text-red-600 dark:hover:text-red-400"
                       aria-label={t('delete')}
@@ -205,16 +239,22 @@ export const DebtsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Add Debt Modal */}
-      {addOpen && (
+      {/* Add / Edit Debt Modal */}
+      {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-titanium-950/60 p-4">
           <form
-            onSubmit={handleCreate}
+            onSubmit={handleSave}
             className="w-full max-w-md bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl overflow-hidden"
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-titanium-200 dark:border-titanium-800">
-              <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">{t('addDebt')}</h3>
-              <button type="button" onClick={() => setAddOpen(false)} className="text-titanium-500 hover:text-titanium-800 dark:hover:text-titanium-200">
+              <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">
+                {editingId
+                  ? lang === 'my'
+                    ? 'အကြွေးစာရင်း ပြင်ဆင်ရန်'
+                    : 'Edit Debt Record'
+                  : t('addDebt')}
+              </h3>
+              <button type="button" onClick={() => setModalOpen(false)} className="text-titanium-500 hover:text-titanium-800 dark:hover:text-titanium-200">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -235,14 +275,24 @@ export const DebtsView: React.FC = () => {
                   </button>
                 ))}
               </div>
-              <div>
-                <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('partyName')}</label>
-                <input
-                  required
-                  value={partyName}
-                  onChange={(e) => setPartyName(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('partyName')}</label>
+                  <input
+                    required
+                    value={partyName}
+                    onChange={(e) => setPartyName(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('refNo')}</label>
+                  <input
+                    value={referenceNo}
+                    onChange={(e) => setReferenceNo(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -270,7 +320,7 @@ export const DebtsView: React.FC = () => {
                   <input
                     type="number"
                     required
-                    min={1}
+                    min={0}
                     value={totalAmount}
                     onChange={(e) => setTotalAmount(e.target.value)}
                     className="w-full px-3 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
@@ -299,7 +349,7 @@ export const DebtsView: React.FC = () => {
             <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-titanium-200 dark:border-titanium-800">
               <button
                 type="button"
-                onClick={() => setAddOpen(false)}
+                onClick={() => setModalOpen(false)}
                 className="px-4 py-2 text-xs font-medium text-titanium-600 dark:text-titanium-300 hover:bg-titanium-100 dark:hover:bg-titanium-800 rounded-lg"
               >
                 {t('cancel')}

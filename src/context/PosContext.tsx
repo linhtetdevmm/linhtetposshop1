@@ -58,8 +58,10 @@ import { createSeedDataset } from '../data/seedData';
 import { generateDocId, generateVoucherNo, getTodayISO } from '../lib/format';
 import {
   getOrCreateDeviceId,
+  getRemainingDays,
   isPrimaryAdminEmail,
   normalizePassCode,
+  resolveSubscriptionExpiryMs,
   timestampToMs,
 } from '../lib/accessControl';
 import {
@@ -102,6 +104,10 @@ interface PosContextValue {
   accessStatus: AccessGateStatus;
   activeLicense: UserLicense | null;
   activePass: AccessPass | null;
+  subscriptionExpiry: number | null;
+  isSubscriptionExpired: boolean;
+  subscriptionDaysRemaining: number | null;
+  refreshSubscriptionStatus: () => Promise<boolean>;
   activeShopId: string;
   adminTargetShopId: string | null;
   adminTargetShopLabel: string;
@@ -159,6 +165,20 @@ interface PosContextValue {
       deliveryFee: number;
     };
   }) => Promise<Sale>;
+  updateSale: (
+    id: string,
+    payload: {
+      voucherNo: string;
+      date: string;
+      customerName: string;
+      customerPhone: string;
+      paymentMethod: PaymentMethod;
+      items: SaleItem[];
+      discount: number;
+      paidAmount: number;
+      note: string;
+    }
+  ) => Promise<void>;
   deleteSale: (id: string) => Promise<void>;
 
   createPurchase: (payload: {
@@ -169,6 +189,18 @@ interface PosContextValue {
     status: 'paid' | 'credit';
     note: string;
   }) => Promise<void>;
+  updatePurchase: (
+    id: string,
+    payload: {
+      refNo: string;
+      date: string;
+      supplierName: string;
+      items: PurchaseItem[];
+      paidAmount: number;
+      status: 'paid' | 'credit';
+      note: string;
+    }
+  ) => Promise<void>;
   deletePurchase: (id: string) => Promise<void>;
 
   adjustProductStock: (payload: {
@@ -177,9 +209,35 @@ interface PosContextValue {
     quantity: number;
     reason: string;
   }) => Promise<void>;
+  updateStockLog: (
+    id: string,
+    payload: {
+      productName: string;
+      type: 'in' | 'out' | 'adjust';
+      quantity: number;
+      previousStock: number;
+      newStock: number;
+      reason: string;
+      date: string;
+    }
+  ) => Promise<void>;
+  deleteStockLog: (id: string) => Promise<void>;
 
   createDebt: (
     payload: Omit<Debt, 'id' | 'ownerId' | 'remainingAmount' | 'status' | 'createdAt' | 'updatedAt'>
+  ) => Promise<void>;
+  updateDebt: (
+    id: string,
+    payload: {
+      type: 'receivable' | 'payable';
+      partyName: string;
+      phone: string;
+      referenceNo: string;
+      totalAmount: number;
+      paidAmount: number;
+      dueDate: string;
+      note: string;
+    }
   ) => Promise<void>;
   recordDebtPayment: (debtId: string, payAmount: number) => Promise<void>;
   deleteDebt: (id: string) => Promise<void>;
@@ -191,6 +249,10 @@ interface PosContextValue {
   deleteExpense: (id: string) => Promise<void>;
 
   createDelivery: (
+    payload: Omit<Delivery, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>
+  ) => Promise<void>;
+  updateDelivery: (
+    id: string,
     payload: Omit<Delivery, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>
   ) => Promise<void>;
   updateDeliveryStatus: (deliveryId: string, status: DeliveryStatus) => Promise<void>;
@@ -287,10 +349,20 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [isAdmin]
   );
 
-  // Periodic 30-second clock tick so expired passes lock automatically while app stays open
+  // Periodic 30-second clock tick + tab focus check so expired subscriptions lock immediately
   useEffect(() => {
-    const id = window.setInterval(() => setClockTick(Date.now()), 30000);
-    return () => window.clearInterval(id);
+    const syncClock = () => setClockTick(Date.now());
+    const id = window.setInterval(syncClock, 30000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') syncClock();
+    };
+    window.addEventListener('focus', syncClock);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('focus', syncClock);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
 
   const showToast = useCallback(
@@ -607,6 +679,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return;
         }
         const d = snap.data();
+        const licExpiryMs = resolveSubscriptionExpiryMs(d);
         const lic: UserLicense = {
           userId: String(d.userId || user.uid),
           email: String(d.email || user.email || ''),
@@ -614,7 +687,8 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           passCode: String(d.passCode || ''),
           label: String(d.label || ''),
           status: d.status === 'revoked' ? 'revoked' : 'active',
-          expiresAtMs: timestampToMs(d.expiresAt),
+          expiresAtMs: licExpiryMs,
+          subscriptionExpiryMs: timestampToMs(d.subscription_expiry) || licExpiryMs,
           maxDevices: Number(d.maxDevices || 1),
           createdAtMs: timestampToMs(d.createdAt),
           updatedAtMs: timestampToMs(d.updatedAt),
@@ -634,13 +708,15 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               setActivePass(null);
             } else {
               const p = passSnap.data();
+              const passExpiryMs = resolveSubscriptionExpiryMs(p);
               setActivePass({
                 code: String(p.code || lic.passCode),
                 label: String(p.label || lic.label),
                 note: String(p.note || ''),
                 status: p.status === 'revoked' ? 'revoked' : 'active',
                 durationDays: Number(p.durationDays || 30),
-                expiresAtMs: timestampToMs(p.expiresAt),
+                expiresAtMs: passExpiryMs,
+                subscriptionExpiryMs: timestampToMs(p.subscription_expiry) || passExpiryMs,
                 maxDevices: Number(p.maxDevices || 1),
                 boundDevices: Array.isArray(p.boundDevices) ? p.boundDevices.map(String) : [],
                 assignedUid: String(p.assignedUid || ''),
@@ -671,16 +747,104 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [authReady, user, isAdmin]);
 
+  // Resolved subscription_expiry date (ms) tracked from Firebase userLicenses & accessPasses
+  const subscriptionExpiry: number | null = useMemo(() => {
+    if (!user || isAdmin) return null;
+    const licMs = activeLicense?.subscriptionExpiryMs || activeLicense?.expiresAtMs || 0;
+    const passMs = activePass?.subscriptionExpiryMs || activePass?.expiresAtMs || 0;
+    if (licMs > 0 && passMs > 0) return Math.min(licMs, passMs);
+    if (licMs > 0) return licMs;
+    if (passMs > 0) return passMs;
+    return null;
+  }, [user, isAdmin, activeLicense, activePass]);
+
+  const isSubscriptionExpired = useMemo(() => {
+    if (!user || isAdmin) return false;
+    if (subscriptionExpiry === null) return false;
+    return subscriptionExpiry <= clockTick;
+  }, [user, isAdmin, subscriptionExpiry, clockTick]);
+
+  const subscriptionDaysRemaining = useMemo(() => {
+    if (!user || isAdmin || subscriptionExpiry === null) return null;
+    return getRemainingDays(subscriptionExpiry, clockTick);
+  }, [user, isAdmin, subscriptionExpiry, clockTick]);
+
+  // Force re-fetch subscription_expiry from Firebase server (e.g., after Admin renews license)
+  const refreshSubscriptionStatus = useCallback(async (): Promise<boolean> => {
+    setClockTick(Date.now());
+    if (!user) return false;
+    if (isAdmin) return true;
+    try {
+      const licSnap = await getDocFromServer(doc(db, 'userLicenses', user.uid));
+      if (!licSnap.exists()) {
+        setActiveLicense(null);
+        setActivePass(null);
+        return false;
+      }
+      const d = licSnap.data();
+      const licExpiryMs = resolveSubscriptionExpiryMs(d);
+      const lic: UserLicense = {
+        userId: String(d.userId || user.uid),
+        email: String(d.email || user.email || ''),
+        displayName: String(d.displayName || ''),
+        passCode: String(d.passCode || ''),
+        label: String(d.label || ''),
+        status: d.status === 'revoked' ? 'revoked' : 'active',
+        expiresAtMs: licExpiryMs,
+        subscriptionExpiryMs: timestampToMs(d.subscription_expiry) || licExpiryMs,
+        maxDevices: Number(d.maxDevices || 1),
+        createdAtMs: timestampToMs(d.createdAt),
+        updatedAtMs: timestampToMs(d.updatedAt),
+      };
+      setActiveLicense(lic);
+
+      let passExpiryMs = 0;
+      let passActive = false;
+      if (lic.passCode) {
+        const passSnap = await getDocFromServer(doc(db, 'accessPasses', lic.passCode));
+        if (passSnap.exists()) {
+          const p = passSnap.data();
+          passExpiryMs = resolveSubscriptionExpiryMs(p);
+          passActive = p.status !== 'revoked';
+          setActivePass({
+            code: String(p.code || lic.passCode),
+            label: String(p.label || lic.label),
+            note: String(p.note || ''),
+            status: p.status === 'revoked' ? 'revoked' : 'active',
+            durationDays: Number(p.durationDays || 30),
+            expiresAtMs: passExpiryMs,
+            subscriptionExpiryMs: timestampToMs(p.subscription_expiry) || passExpiryMs,
+            maxDevices: Number(p.maxDevices || 1),
+            boundDevices: Array.isArray(p.boundDevices) ? p.boundDevices.map(String) : [],
+            assignedUid: String(p.assignedUid || ''),
+            assignedEmail: String(p.assignedEmail || ''),
+            createdBy: String(p.createdBy || ''),
+            createdAtMs: timestampToMs(p.createdAt),
+            updatedAtMs: timestampToMs(p.updatedAt),
+          });
+        } else {
+          setActivePass(null);
+        }
+      }
+      const now = Date.now();
+      const effectiveMs = licExpiryMs > 0 && passExpiryMs > 0 ? Math.min(licExpiryMs, passExpiryMs) : licExpiryMs;
+      return lic.status === 'active' && passActive && effectiveMs > now;
+    } catch {
+      return false;
+    }
+  }, [user, isAdmin]);
+
   // Compute strict Access Gate status
   const accessStatus: AccessGateStatus = useMemo(() => {
     if (!authReady) return 'loading';
     if (!user) return 'unauthenticated';
     if (isAdmin) return 'granted';
     if (!licenseReady) return 'loading';
-    if (!activeLicense || !activePass) return 'needs_pass';
-    if (activeLicense.status === 'revoked' || activePass.status === 'revoked') return 'revoked';
-    const effectiveExpiry = Math.min(activeLicense.expiresAtMs || 0, activePass.expiresAtMs || 0);
-    if (!effectiveExpiry || effectiveExpiry <= clockTick) return 'expired';
+    if (!activeLicense) return 'needs_pass';
+    if (activeLicense.status === 'revoked' || activePass?.status === 'revoked') return 'revoked';
+    if (subscriptionExpiry !== null && subscriptionExpiry <= clockTick) return 'expired';
+    if (!activePass) return 'needs_pass';
+    if (!subscriptionExpiry) return 'expired';
     if (activePass.assignedUid && activePass.assignedUid !== user.uid) return 'revoked';
     if (
       activePass.boundDevices.length >= activePass.maxDevices &&
@@ -689,7 +853,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return 'device_limit';
     }
     return 'granted';
-  }, [authReady, user, isAdmin, licenseReady, activeLicense, activePass, clockTick, deviceId]);
+  }, [authReady, user, isAdmin, licenseReady, activeLicense, activePass, subscriptionExpiry, clockTick, deviceId]);
 
   // Atomic Pass Redemption (verifies live Firestore server doc, binds Gmail + deviceId)
   const redeemAccessPass = useCallback(
@@ -732,7 +896,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
         }
 
-        const expiresAtMs = timestampToMs(p.expiresAt);
+        const expiresAtMs = resolveSubscriptionExpiryMs(p);
         if (!expiresAtMs || expiresAtMs <= Date.now()) {
           return {
             ok: false,
@@ -785,6 +949,8 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const expiresTs =
           p.expiresAt instanceof Timestamp ? p.expiresAt : Timestamp.fromMillis(expiresAtMs);
+        const subscriptionExpiryTs =
+          p.subscription_expiry instanceof Timestamp ? p.subscription_expiry : expiresTs;
 
         if (existingLic.exists()) {
           batch.update(licRef, {
@@ -792,6 +958,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             label: clampString(p.label, 120, 'Licensed Shop'),
             status: 'active',
             expiresAt: expiresTs,
+            subscription_expiry: subscriptionExpiryTs,
             maxDevices,
             updatedAt: serverTimestamp(),
           });
@@ -804,6 +971,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             label: clampString(p.label, 120, 'Licensed Shop'),
             status: 'active',
             expiresAt: expiresTs,
+            subscription_expiry: subscriptionExpiryTs,
             maxDevices,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
@@ -1407,6 +1575,66 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [user, activeShopId, products, ensureShopDoc, lang, showToast]
   );
 
+  const updateSale = useCallback(
+    async (
+      id: string,
+      payload: {
+        voucherNo: string;
+        date: string;
+        customerName: string;
+        customerPhone: string;
+        paymentMethod: PaymentMethod;
+        items: SaleItem[];
+        discount: number;
+        paidAmount: number;
+        note: string;
+      }
+    ) => {
+      const uid = activeShopId;
+      const boundedItems = payload.items.slice(0, 100);
+      if (boundedItems.length === 0) return;
+      const subtotal = boundedItems.reduce((s, it) => s + it.lineTotal, 0);
+      const discount = clampNumber(payload.discount, 0, subtotal);
+      const total = Math.max(0, subtotal - discount);
+      const totalCost = boundedItems.reduce((s, it) => s + it.costPrice * it.qty, 0);
+      const profit = total - totalCost;
+      const paidAmount = clampNumber(payload.paidAmount, 0, 1000000000);
+      const data = {
+        voucherNo: clampString(payload.voucherNo, 48, 'INV'),
+        date: sanitizeDate(payload.date),
+        customerName: clampString(payload.customerName, 120),
+        customerPhone: clampString(payload.customerPhone, 40),
+        paymentMethod: payload.paymentMethod,
+        items: boundedItems,
+        subtotal,
+        discount,
+        total,
+        totalCost,
+        profit,
+        paidAmount,
+        note: clampString(payload.note, 240),
+      };
+
+      if (!user) {
+        setSales((prev) => prev.map((s) => (s.id === id ? { ...s, ...data } : s)));
+        showToast(lang === 'my' ? 'အရောင်းမှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Sale updated.');
+        return;
+      }
+
+      const path = `shops/${uid}/sales/${id}`;
+      try {
+        await updateDoc(doc(db, 'shops', uid, 'sales', sanitizeId(id)), {
+          ...data,
+          updatedAt: serverTimestamp(),
+        });
+        showToast(lang === 'my' ? 'အရောင်းမှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Sale updated.');
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    },
+    [user, activeShopId, lang, showToast]
+  );
+
   const deleteSale = useCallback(
     async (id: string) => {
       if (!user) {
@@ -1580,6 +1808,56 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [user, activeShopId, products, ensureShopDoc, lang, showToast]
   );
 
+  const updatePurchase = useCallback(
+    async (
+      id: string,
+      payload: {
+        refNo: string;
+        date: string;
+        supplierName: string;
+        items: PurchaseItem[];
+        paidAmount: number;
+        status: 'paid' | 'credit';
+        note: string;
+      }
+    ) => {
+      const uid = activeShopId;
+      const boundedItems = payload.items.slice(0, 100);
+      if (boundedItems.length === 0) return;
+      const totalAmount = boundedItems.reduce((s, it) => s + it.lineTotal, 0);
+      const paidAmount =
+        payload.status === 'paid' ? totalAmount : clampNumber(payload.paidAmount, 0, totalAmount);
+      const data = {
+        refNo: clampString(payload.refNo, 48, 'PO'),
+        date: sanitizeDate(payload.date),
+        supplierName: clampString(payload.supplierName, 120, 'Supplier'),
+        items: boundedItems,
+        totalAmount,
+        paidAmount,
+        status: (paidAmount >= totalAmount ? 'paid' : payload.status) as 'paid' | 'credit',
+        note: clampString(payload.note, 240),
+      };
+
+      if (!user) {
+        setPurchases((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
+        showToast(lang === 'my' ? 'အဝယ်မှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Purchase updated.');
+        return;
+      }
+
+      const path = `shops/${uid}/purchases/${id}`;
+      try {
+        await updateDoc(doc(db, 'shops', uid, 'purchases', sanitizeId(id)), {
+          ...data,
+          updatedAt: serverTimestamp(),
+        });
+        showToast(lang === 'my' ? 'အဝယ်မှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Purchase updated.');
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    },
+    [user, activeShopId, lang, showToast]
+  );
+
   const deletePurchase = useCallback(
     async (id: string) => {
       if (!user) {
@@ -1599,7 +1877,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   // ---------------------------------------------------------------------------
-  // 5. Stock Adjustment
+  // 5. Stock Adjustment & Stock Logs Edit/Delete
   // ---------------------------------------------------------------------------
   const adjustProductStock = useCallback(
     async (payload: {
@@ -1662,6 +1940,68 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [user, activeShopId, products, ensureShopDoc, lang, showToast]
   );
 
+  const updateStockLog = useCallback(
+    async (
+      id: string,
+      payload: {
+        productName: string;
+        type: 'in' | 'out' | 'adjust';
+        quantity: number;
+        previousStock: number;
+        newStock: number;
+        reason: string;
+        date: string;
+      }
+    ) => {
+      const uid = activeShopId;
+      const data = {
+        productName: clampString(payload.productName, 140, 'Product'),
+        type: payload.type,
+        quantity: Number.isFinite(Number(payload.quantity)) ? Number(payload.quantity) : 0,
+        previousStock: Number.isFinite(Number(payload.previousStock)) ? Number(payload.previousStock) : 0,
+        newStock: Number.isFinite(Number(payload.newStock)) ? Number(payload.newStock) : 0,
+        reason: clampString(payload.reason, 200, 'Adjustment'),
+        date: sanitizeDate(payload.date),
+      };
+
+      if (!user) {
+        setStockLogs((prev) => prev.map((l) => (l.id === id ? { ...l, ...data } : l)));
+        showToast(lang === 'my' ? 'Stock မှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Stock log updated.');
+        return;
+      }
+
+      const path = `shops/${uid}/stockLogs/${id}`;
+      try {
+        await updateDoc(doc(db, 'shops', uid, 'stockLogs', sanitizeId(id)), {
+          ...data,
+          updatedAt: serverTimestamp(),
+        });
+        showToast(lang === 'my' ? 'Stock မှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Stock log updated.');
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    },
+    [user, activeShopId, lang, showToast]
+  );
+
+  const deleteStockLog = useCallback(
+    async (id: string) => {
+      if (!user) {
+        setStockLogs((prev) => prev.filter((l) => l.id !== id));
+        showToast(lang === 'my' ? 'Stock မှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Stock log deleted.', 'info');
+        return;
+      }
+      const path = `shops/${activeShopId}/stockLogs/${id}`;
+      try {
+        await deleteDoc(doc(db, 'shops', activeShopId, 'stockLogs', sanitizeId(id)));
+        showToast(lang === 'my' ? 'Stock မှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Stock log deleted.', 'info');
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, path);
+      }
+    },
+    [user, activeShopId, lang, showToast]
+  );
+
   // ---------------------------------------------------------------------------
   // 6. Debts Ledger
   // ---------------------------------------------------------------------------
@@ -1716,6 +2056,59 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     },
     [user, activeShopId, ensureShopDoc, lang, showToast]
+  );
+
+  const updateDebt = useCallback(
+    async (
+      id: string,
+      payload: {
+        type: 'receivable' | 'payable';
+        partyName: string;
+        phone: string;
+        referenceNo: string;
+        totalAmount: number;
+        paidAmount: number;
+        dueDate: string;
+        note: string;
+      }
+    ) => {
+      const uid = activeShopId;
+      const totalAmount = clampNumber(payload.totalAmount, 0);
+      const paidAmount = clampNumber(payload.paidAmount, 0, totalAmount);
+      const remainingAmount = Math.max(0, totalAmount - paidAmount);
+      const status: Debt['status'] =
+        remainingAmount === 0 ? 'settled' : paidAmount > 0 ? 'partial' : 'pending';
+      const data = {
+        type: payload.type,
+        partyName: clampString(payload.partyName, 120, 'Party'),
+        phone: clampString(payload.phone, 40),
+        referenceNo: clampString(payload.referenceNo, 48),
+        totalAmount,
+        paidAmount,
+        remainingAmount,
+        dueDate: sanitizeDate(payload.dueDate),
+        status,
+        note: clampString(payload.note, 240),
+      };
+
+      if (!user) {
+        setDebts((prev) => prev.map((d) => (d.id === id ? { ...d, ...data } : d)));
+        showToast(lang === 'my' ? 'အကြွေးစာရင်း ပြင်ဆင်ပြီးပါပြီ။' : 'Debt record updated.');
+        return;
+      }
+
+      const path = `shops/${uid}/debts/${id}`;
+      try {
+        await updateDoc(doc(db, 'shops', uid, 'debts', sanitizeId(id)), {
+          ...data,
+          updatedAt: serverTimestamp(),
+        });
+        showToast(lang === 'my' ? 'အကြွေးစာရင်း ပြင်ဆင်ပြီးပါပြီ။' : 'Debt record updated.');
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    },
+    [user, activeShopId, lang, showToast]
   );
 
   const recordDebtPayment = useCallback(
@@ -1897,10 +2290,49 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [user, activeShopId, ensureShopDoc, lang, showToast]
   );
 
+  const updateDelivery = useCallback(
+    async (
+      id: string,
+      payload: Omit<Delivery, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>
+    ) => {
+      const uid = activeShopId;
+      const data = {
+        voucherNo: clampString(payload.voucherNo, 48, 'DLV'),
+        date: sanitizeDate(payload.date),
+        customerName: clampString(payload.customerName, 120, 'Customer'),
+        phone: clampString(payload.phone, 40),
+        address: clampString(payload.address, 240, 'Yangon'),
+        courierName: clampString(payload.courierName, 80, 'Express'),
+        deliveryFee: clampNumber(payload.deliveryFee, 0),
+        codAmount: clampNumber(payload.codAmount, 0),
+        status: payload.status || 'pending',
+        note: clampString(payload.note, 240),
+      };
+
+      if (!user) {
+        setDeliveries((prev) => prev.map((d) => (d.id === id ? { ...d, ...data } : d)));
+        showToast(lang === 'my' ? 'ပို့ဆောင်မှုမှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Delivery updated.');
+        return;
+      }
+
+      const path = `shops/${uid}/deliveries/${id}`;
+      try {
+        await updateDoc(doc(db, 'shops', uid, 'deliveries', sanitizeId(id)), {
+          ...data,
+          updatedAt: serverTimestamp(),
+        });
+        showToast(lang === 'my' ? 'ပို့ဆောင်မှုမှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Delivery updated.');
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    },
+    [user, activeShopId, lang, showToast]
+  );
+
   const updateDeliveryStatus = useCallback(
     async (deliveryId: string, status: DeliveryStatus) => {
       const existing = deliveries.find((d) => d.id === deliveryId);
-      if (!existing || existing.status === 'delivered' || existing.status === 'cancelled') return;
+      if (!existing) return;
 
       if (!user) {
         setDeliveries((prev) =>
@@ -2309,6 +2741,10 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     accessStatus,
     activeLicense,
     activePass,
+    subscriptionExpiry,
+    isSubscriptionExpired,
+    subscriptionDaysRemaining,
+    refreshSubscriptionStatus,
     activeShopId,
     adminTargetShopId,
     adminTargetShopLabel,
@@ -2340,16 +2776,22 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveProduct,
     deleteProduct,
     createSale,
+    updateSale,
     deleteSale,
     createPurchase,
+    updatePurchase,
     deletePurchase,
     adjustProductStock,
+    updateStockLog,
+    deleteStockLog,
     createDebt,
+    updateDebt,
     recordDebtPayment,
     deleteDebt,
     saveExpense,
     deleteExpense,
     createDelivery,
+    updateDelivery,
     updateDeliveryStatus,
     deleteDelivery,
     exportBackupJson,
