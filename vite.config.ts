@@ -4,8 +4,29 @@ import fs from 'fs';
 import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
 
+function cleanEnvValue(value: string | undefined): string {
+  const trimmed = (value || '').trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+function isValidHttpUrl(url: string): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function isSafePublicSupabaseKey(key: string): boolean {
-  const trimmed = key.trim();
+  const trimmed = cleanEnvValue(key);
   if (!trimmed) return false;
   if (trimmed.startsWith('sb_secret_')) return false;
   // Reject JWT keys whose payload role is service_role
@@ -25,33 +46,31 @@ function isSafePublicSupabaseKey(key: string): boolean {
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const publicSupabaseUrl = (
-    env.VITE_SUPABASE_URL ||
-    process.env.VITE_SUPABASE_URL ||
-    env.SUPABASE_URL ||
-    process.env.SUPABASE_URL ||
-    env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    ''
-  ).trim();
+  const urlCandidates = [
+    env.VITE_SUPABASE_URL,
+    process.env.VITE_SUPABASE_URL,
+    env.SUPABASE_URL,
+    process.env.SUPABASE_URL,
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+  ].map(cleanEnvValue);
 
-  const rawPublicSupabaseKey = (
-    env.VITE_SUPABASE_ANON_KEY ||
-    process.env.VITE_SUPABASE_ANON_KEY ||
-    env.SUPABASE_ANON_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    env.SUPABASE_PUBLISHABLE_KEY ||
-    process.env.SUPABASE_PUBLISHABLE_KEY ||
-    env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    ''
-  ).trim();
+  const publicSupabaseUrl = urlCandidates.find(isValidHttpUrl) || '';
 
-  const publicSupabaseAnonKey = isSafePublicSupabaseKey(rawPublicSupabaseKey)
-    ? rawPublicSupabaseKey
-    : '';
+  const keyCandidates = [
+    env.VITE_SUPABASE_ANON_KEY,
+    process.env.VITE_SUPABASE_ANON_KEY,
+    env.SUPABASE_ANON_KEY,
+    process.env.SUPABASE_ANON_KEY,
+    env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    env.SUPABASE_PUBLISHABLE_KEY,
+    process.env.SUPABASE_PUBLISHABLE_KEY,
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  ].map(cleanEnvValue);
+
+  const publicSupabaseAnonKey = keyCandidates.find(isSafePublicSupabaseKey) || '';
 
   return {
     define: {

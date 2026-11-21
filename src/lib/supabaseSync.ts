@@ -1,5 +1,7 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient, type User as SupabaseUser } from '@supabase/supabase-js';
 import type {
+  AccessPass,
+  AuthUser,
   Debt,
   Delivery,
   Expense,
@@ -9,7 +11,9 @@ import type {
   Sale,
   ShopSettings,
   StockLog,
+  UserLicense,
 } from '../types/pos';
+import { resolveSubscriptionExpiryMs, timestampToMs } from './accessControl';
 
 declare const __SHWEPOS_SUPABASE_URL__: string | undefined;
 declare const __SHWEPOS_SUPABASE_ANON_KEY__: string | undefined;
@@ -26,21 +30,65 @@ export interface SupabaseSyncPayload {
   deliveries: Delivery[];
 }
 
+export interface SupabaseShopRow extends ShopSettings {
+  id: string;
+}
+
+function cleanCredential(val: unknown): string {
+  if (typeof val !== 'string') return '';
+  const trimmed = val.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+function isValidSupabaseHttpUrl(url: string): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function isSafeBrowserSupabaseKey(key: string): boolean {
+  if (!key) return false;
+  if (key.startsWith('sb_secret_')) return false;
+  const parts = key.split('.');
+  if (parts.length === 3) {
+    try {
+      const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+      const json = JSON.parse(atob(padded)) as { role?: string };
+      if (json.role && json.role !== 'anon') return false;
+    } catch {
+      // Allow non-JWT publishable keys (e.g. sb_publishable_*)
+    }
+  }
+  return true;
+}
+
 function getClientSupabaseCredentials(): { url: string; anonKey: string } {
-  const url = (
-    import.meta.env.VITE_SUPABASE_URL ||
-    (typeof __SHWEPOS_SUPABASE_URL__ === 'string' ? __SHWEPOS_SUPABASE_URL__ : '') ||
-    ''
-  ).trim();
+  const urlCandidates = [
+    typeof __SHWEPOS_SUPABASE_URL__ === 'string' ? __SHWEPOS_SUPABASE_URL__ : '',
+    import.meta.env.VITE_SUPABASE_URL,
+  ].map(cleanCredential);
 
-  const anonKey = (
-    import.meta.env.VITE_SUPABASE_ANON_KEY ||
-    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    (typeof __SHWEPOS_SUPABASE_ANON_KEY__ === 'string' ? __SHWEPOS_SUPABASE_ANON_KEY__ : '') ||
-    ''
-  ).trim();
+  const keyCandidates = [
+    typeof __SHWEPOS_SUPABASE_ANON_KEY__ === 'string' ? __SHWEPOS_SUPABASE_ANON_KEY__ : '',
+    import.meta.env.VITE_SUPABASE_ANON_KEY,
+    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+  ].map(cleanCredential);
 
-  return { url, anonKey };
+  return {
+    url: urlCandidates.find(isValidSupabaseHttpUrl) || '',
+    anonKey: keyCandidates.find(isSafeBrowserSupabaseKey) || '',
+  };
 }
 
 export function isClientSupabaseConfigured(): boolean {
@@ -51,17 +99,126 @@ export function isClientSupabaseConfigured(): boolean {
 let cachedClient: SupabaseClient | null = null;
 let cachedSignature = '';
 
-function getClientSupabase(): SupabaseClient | null {
+export function getClientSupabase(): SupabaseClient | null {
   const { url, anonKey } = getClientSupabaseCredentials();
   if (!url || !anonKey) return null;
   const sig = `${url}::${anonKey.slice(0, 12)}`;
   if (!cachedClient || cachedSignature !== sig) {
-    cachedClient = createClient(url, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    cachedSignature = sig;
+    try {
+      cachedClient = createClient(url, anonKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+        },
+      });
+      cachedSignature = sig;
+    } catch {
+      cachedClient = null;
+      cachedSignature = '';
+      return null;
+    }
   }
   return cachedClient;
+}
+
+export function mapSupabaseUser(u: SupabaseUser | null): AuthUser | null {
+  if (!u) return null;
+  const metaName =
+    typeof u.user_metadata?.full_name === 'string' && u.user_metadata.full_name.trim()
+      ? u.user_metadata.full_name.trim()
+      : null;
+  return {
+    uid: u.id,
+    email: u.email ?? null,
+    displayName: metaName || (u.email ? u.email.split('@')[0] : null),
+    provider: 'supabase',
+  };
+}
+
+export function onSupabaseAuthChange(
+  callback: (user: AuthUser | null, initialResolved: boolean) => void
+): () => void {
+  const supabase = getClientSupabase();
+  if (!supabase) {
+    callback(null, true);
+    return () => {};
+  }
+
+  let active = true;
+  supabase.auth
+    .getSession()
+    .then(({ data }) => {
+      if (!active) return;
+      callback(mapSupabaseUser(data.session?.user ?? null), true);
+    })
+    .catch(() => {
+      if (!active) return;
+      callback(null, true);
+    });
+
+  const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (!active) return;
+    callback(mapSupabaseUser(session?.user ?? null), true);
+  });
+
+  return () => {
+    active = false;
+    sub.subscription.unsubscribe();
+  };
+}
+
+export async function signInWithSupabaseEmail(
+  email: string,
+  password: string
+): Promise<{ ok: boolean; user?: AuthUser; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password,
+  });
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  const mapped = mapSupabaseUser(data.user ?? data.session?.user ?? null);
+  return { ok: true, user: mapped ?? undefined };
+}
+
+export async function signUpWithSupabaseEmail(
+  email: string,
+  password: string,
+  displayName?: string
+): Promise<{ ok: boolean; user?: AuthUser; needsEmailConfirm?: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim().toLowerCase(),
+    password,
+    options: {
+      data: {
+        full_name: (displayName || '').trim() || email.trim().split('@')[0],
+      },
+    },
+  });
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  if (!data.session && data.user) {
+    return { ok: true, needsEmailConfirm: true };
+  }
+  const mapped = mapSupabaseUser(data.user ?? data.session?.user ?? null);
+  return { ok: true, user: mapped ?? undefined, needsEmailConfirm: false };
+}
+
+export async function signOutSupabase(): Promise<void> {
+  const supabase = getClientSupabase();
+  if (!supabase) return;
+  await supabase.auth.signOut().catch(() => {});
 }
 
 export async function checkClientSupabaseHealth(): Promise<{
@@ -92,6 +249,533 @@ export async function checkClientSupabaseHealth(): Promise<{
     };
   }
 }
+
+// ---------- Supabase Access Passes & User Licenses ----------
+
+function mapPassRow(r: Record<string, unknown>): AccessPass {
+  const expMs = resolveSubscriptionExpiryMs({
+    subscription_expiry: r.subscription_expiry,
+    expiresAt: r.expires_at,
+  });
+  return {
+    code: String(r.code || ''),
+    label: String(r.label || ''),
+    note: String(r.note || ''),
+    status: r.status === 'revoked' ? 'revoked' : 'active',
+    durationDays: Number(r.duration_days || 30),
+    expiresAtMs: expMs,
+    subscriptionExpiryMs: timestampToMs(r.subscription_expiry) || expMs,
+    maxDevices: Number(r.max_devices || 1),
+    boundDevices: Array.isArray(r.bound_devices) ? r.bound_devices.map(String) : [],
+    assignedUid: String(r.assigned_uid || ''),
+    assignedEmail: String(r.assigned_email || ''),
+    createdBy: String(r.created_by || ''),
+    createdAtMs: timestampToMs(r.created_at),
+    updatedAtMs: timestampToMs(r.updated_at),
+  };
+}
+
+function mapLicenseRow(r: Record<string, unknown>): UserLicense {
+  const expMs = resolveSubscriptionExpiryMs({
+    subscription_expiry: r.subscription_expiry,
+    expiresAt: r.expires_at,
+  });
+  return {
+    userId: String(r.user_id || ''),
+    email: String(r.email || ''),
+    displayName: String(r.display_name || ''),
+    passCode: String(r.pass_code || ''),
+    label: String(r.label || ''),
+    status: r.status === 'revoked' ? 'revoked' : 'active',
+    expiresAtMs: expMs,
+    subscriptionExpiryMs: timestampToMs(r.subscription_expiry) || expMs,
+    maxDevices: Number(r.max_devices || 1),
+    createdAtMs: timestampToMs(r.created_at),
+    updatedAtMs: timestampToMs(r.updated_at),
+  };
+}
+
+export async function fetchSupabaseUserLicense(userId: string): Promise<{
+  license: UserLicense | null;
+  pass: AccessPass | null;
+  error?: string;
+}> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { license: null, pass: null, error: 'Supabase not configured.' };
+
+  const { data: licData, error: licErr } = await supabase
+    .from('pos_user_licenses')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (licErr) {
+    return { license: null, pass: null, error: licErr.message };
+  }
+  if (!licData) {
+    return { license: null, pass: null };
+  }
+
+  const license = mapLicenseRow(licData as Record<string, unknown>);
+  let pass: AccessPass | null = null;
+  if (license.passCode) {
+    const { data: passData } = await supabase
+      .from('pos_access_passes')
+      .select('*')
+      .eq('code', license.passCode)
+      .maybeSingle();
+    if (passData) {
+      pass = mapPassRow(passData as Record<string, unknown>);
+    }
+  }
+  return { license, pass };
+}
+
+export async function redeemSupabaseAccessPass(
+  passCode: string,
+  deviceId: string
+): Promise<{ ok: boolean; code?: string; maxDevices?: number; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+
+  const { data, error } = await supabase.rpc('redeem_shwepos_pass', {
+    p_pass_code: passCode,
+    p_device_id: deviceId,
+  });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  const result = (data || {}) as {
+    ok?: boolean;
+    code?: string;
+    maxDevices?: number;
+  };
+  return {
+    ok: Boolean(result.ok),
+    code: result.code,
+    maxDevices: result.maxDevices,
+  };
+}
+
+// ---------- Supabase Admin Panel Helpers ----------
+
+export async function fetchSupabaseAdminData(): Promise<{
+  passes: AccessPass[];
+  licenses: UserLicense[];
+  shops: SupabaseShopRow[];
+  error?: string;
+}> {
+  const supabase = getClientSupabase();
+  if (!supabase) {
+    return { passes: [], licenses: [], shops: [], error: 'Supabase not configured.' };
+  }
+
+  const [passesRes, licensesRes, shopsRes] = await Promise.all([
+    supabase.from('pos_access_passes').select('*').order('created_at', { ascending: false }),
+    supabase.from('pos_user_licenses').select('*').order('updated_at', { ascending: false }),
+    supabase.from('pos_shops').select('*').order('updated_at', { ascending: false }),
+  ]);
+
+  const err = passesRes.error || licensesRes.error || shopsRes.error;
+  if (err) {
+    return { passes: [], licenses: [], shops: [], error: err.message };
+  }
+
+  return {
+    passes: (passesRes.data || []).map((r) => mapPassRow(r as Record<string, unknown>)),
+    licenses: (licensesRes.data || []).map((r) => mapLicenseRow(r as Record<string, unknown>)),
+    shops: (shopsRes.data || []).map((r) => ({
+      id: String(r.owner_id),
+      ownerId: String(r.owner_id),
+      shopName: String(r.shop_name || 'ShwePOS Shop'),
+      shopSubtitle: String(r.shop_subtitle || ''),
+      phone: String(r.phone || ''),
+      address: String(r.address || ''),
+      receiptFooter: String(r.receipt_footer || ''),
+      currency: 'MMK',
+      defaultMarginPercent: Number(r.default_margin_percent ?? 20),
+      telegramEnabled: Boolean(r.telegram_enabled),
+    })),
+  };
+}
+
+export async function createSupabaseAccessPass(pass: {
+  code: string;
+  label: string;
+  note: string;
+  durationDays: number;
+  expiresAtMs: number;
+  maxDevices: number;
+  createdBy: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+
+  const expIso = new Date(pass.expiresAtMs).toISOString();
+  const { error } = await supabase.from('pos_access_passes').upsert({
+    code: pass.code,
+    label: pass.label,
+    note: pass.note,
+    status: 'active',
+    duration_days: pass.durationDays,
+    expires_at: expIso,
+    subscription_expiry: expIso,
+    max_devices: pass.maxDevices,
+    bound_devices: [],
+    assigned_uid: '',
+    assigned_email: '',
+    created_by: pass.createdBy,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function updateSupabaseAccessPass(
+  code: string,
+  passUpdates: {
+    label?: string;
+    note?: string;
+    status?: 'active' | 'revoked';
+    durationDays?: number;
+    expiresAtMs?: number;
+    maxDevices?: number;
+    boundDevices?: string[];
+    assignedUid?: string;
+    assignedEmail?: string;
+  },
+  linkedLicenseUpdate?: {
+    userId: string;
+    label?: string;
+    status?: 'active' | 'revoked';
+    expiresAtMs?: number;
+    maxDevices?: number;
+  }
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+
+  const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (passUpdates.label !== undefined) row.label = passUpdates.label;
+  if (passUpdates.note !== undefined) row.note = passUpdates.note;
+  if (passUpdates.status !== undefined) row.status = passUpdates.status;
+  if (passUpdates.durationDays !== undefined) row.duration_days = passUpdates.durationDays;
+  if (passUpdates.expiresAtMs !== undefined) {
+    const iso = new Date(passUpdates.expiresAtMs).toISOString();
+    row.expires_at = iso;
+    row.subscription_expiry = iso;
+  }
+  if (passUpdates.maxDevices !== undefined) row.max_devices = passUpdates.maxDevices;
+  if (passUpdates.boundDevices !== undefined) row.bound_devices = passUpdates.boundDevices;
+  if (passUpdates.assignedUid !== undefined) row.assigned_uid = passUpdates.assignedUid;
+  if (passUpdates.assignedEmail !== undefined) row.assigned_email = passUpdates.assignedEmail;
+
+  const { error } = await supabase.from('pos_access_passes').update(row).eq('code', code);
+  if (error) return { ok: false, error: error.message };
+
+  if (linkedLicenseUpdate) {
+    const licRow: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (linkedLicenseUpdate.label !== undefined) licRow.label = linkedLicenseUpdate.label;
+    if (linkedLicenseUpdate.status !== undefined) licRow.status = linkedLicenseUpdate.status;
+    if (linkedLicenseUpdate.expiresAtMs !== undefined) {
+      const iso = new Date(linkedLicenseUpdate.expiresAtMs).toISOString();
+      licRow.expires_at = iso;
+      licRow.subscription_expiry = iso;
+    }
+    if (linkedLicenseUpdate.maxDevices !== undefined) {
+      licRow.max_devices = linkedLicenseUpdate.maxDevices;
+    }
+    const { error: licErr } = await supabase
+      .from('pos_user_licenses')
+      .update(licRow)
+      .eq('user_id', linkedLicenseUpdate.userId);
+    if (licErr) return { ok: false, error: licErr.message };
+  }
+
+  return { ok: true };
+}
+
+export async function deleteSupabaseAccessPass(
+  code: string,
+  linkedUserId?: string
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+
+  if (linkedUserId) {
+    await supabase
+      .from('pos_user_licenses')
+      .update({ status: 'revoked', updated_at: new Date().toISOString() })
+      .eq('user_id', linkedUserId)
+      .eq('pass_code', code);
+  }
+  const { error } = await supabase.from('pos_access_passes').delete().eq('code', code);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function updateSupabaseShopProfile(
+  ownerId: string,
+  updates: {
+    shopName: string;
+    shopSubtitle: string;
+    phone: string;
+    address: string;
+    defaultMarginPercent: number;
+  }
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+
+  const { error } = await supabase
+    .from('pos_shops')
+    .update({
+      shop_name: updates.shopName,
+      shop_subtitle: updates.shopSubtitle,
+      phone: updates.phone,
+      address: updates.address,
+      default_margin_percent: updates.defaultMarginPercent,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('owner_id', ownerId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+// ---------- Single-Record POS CRUD Helpers for Full Supabase Cloud Mode ----------
+
+export async function upsertSupabaseShop(
+  ownerId: string,
+  shop: ShopSettings
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_shops').upsert({
+    owner_id: ownerId,
+    shop_name: shop.shopName,
+    shop_subtitle: shop.shopSubtitle || '',
+    phone: shop.phone || '',
+    address: shop.address || '',
+    receipt_footer: shop.receiptFooter || '',
+    currency: shop.currency || 'MMK',
+    default_margin_percent: Number(shop.defaultMarginPercent || 20),
+    telegram_enabled: Boolean(shop.telegramEnabled),
+    updated_at: new Date().toISOString(),
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function upsertSupabaseProduct(
+  ownerId: string,
+  p: Product
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_products').upsert({
+    id: String(p.id),
+    owner_id: ownerId,
+    sku: String(p.sku || ''),
+    name: String(p.name || ''),
+    category: String(p.category || ''),
+    unit: String(p.unit || 'pcs'),
+    cost_price: Number(p.costPrice || 0),
+    margin_percent: Number(p.marginPercent || 0),
+    sell_price: Number(p.sellPrice || 0),
+    stock: Number(p.stock || 0),
+    min_stock: Number(p.minStock || 5),
+    updated_at: new Date().toISOString(),
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function deleteSupabaseProduct(id: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_products').delete().eq('id', id);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function upsertSupabaseSale(
+  ownerId: string,
+  s: Sale
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_sales').upsert({
+    id: String(s.id),
+    owner_id: ownerId,
+    voucher_no: String(s.voucherNo || ''),
+    date: String(s.date || ''),
+    customer_name: String(s.customerName || ''),
+    customer_phone: String(s.customerPhone || ''),
+    payment_method: String(s.paymentMethod || 'cash'),
+    items: s.items || [],
+    subtotal: Number(s.subtotal || 0),
+    discount: Number(s.discount || 0),
+    total: Number(s.total || 0),
+    total_cost: Number(s.totalCost || 0),
+    profit: Number(s.profit || 0),
+    paid_amount: Number(s.paidAmount || 0),
+    note: String(s.note || ''),
+    updated_at: new Date().toISOString(),
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function deleteSupabaseSale(id: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_sales').delete().eq('id', id);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function upsertSupabasePurchase(
+  ownerId: string,
+  p: Purchase
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_purchases').upsert({
+    id: String(p.id),
+    owner_id: ownerId,
+    ref_no: String(p.refNo || ''),
+    date: String(p.date || ''),
+    supplier_name: String(p.supplierName || ''),
+    items: p.items || [],
+    total_amount: Number(p.totalAmount || 0),
+    paid_amount: Number(p.paidAmount || 0),
+    status: String(p.status || 'paid'),
+    note: String(p.note || ''),
+    updated_at: new Date().toISOString(),
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function deleteSupabasePurchase(id: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_purchases').delete().eq('id', id);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function upsertSupabaseStockLog(
+  ownerId: string,
+  l: StockLog
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_stock_logs').upsert({
+    id: String(l.id),
+    owner_id: ownerId,
+    product_id: String(l.productId || ''),
+    product_name: String(l.productName || ''),
+    type: String(l.type || 'adjust'),
+    quantity: Number(l.quantity || 0),
+    previous_stock: Number(l.previousStock || 0),
+    new_stock: Number(l.newStock || 0),
+    reason: String(l.reason || ''),
+    date: String(l.date || ''),
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function deleteSupabaseStockLog(id: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_stock_logs').delete().eq('id', id);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function upsertSupabaseDebt(
+  ownerId: string,
+  d: Debt
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_debts').upsert({
+    id: String(d.id),
+    owner_id: ownerId,
+    type: String(d.type || 'receivable'),
+    party_name: String(d.partyName || ''),
+    phone: String(d.phone || ''),
+    reference_no: String(d.referenceNo || ''),
+    total_amount: Number(d.totalAmount || 0),
+    paid_amount: Number(d.paidAmount || 0),
+    remaining_amount: Number(d.remainingAmount || 0),
+    due_date: String(d.dueDate || ''),
+    status: String(d.status || 'pending'),
+    note: String(d.note || ''),
+    updated_at: new Date().toISOString(),
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function deleteSupabaseDebt(id: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_debts').delete().eq('id', id);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function upsertSupabaseExpense(
+  ownerId: string,
+  e: Expense
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_expenses').upsert({
+    id: String(e.id),
+    owner_id: ownerId,
+    date: String(e.date || ''),
+    category: String(e.category || ''),
+    title: String(e.title || ''),
+    amount: Number(e.amount || 0),
+    note: String(e.note || ''),
+    updated_at: new Date().toISOString(),
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function deleteSupabaseExpense(id: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_expenses').delete().eq('id', id);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function upsertSupabaseDelivery(
+  ownerId: string,
+  d: Delivery
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_deliveries').upsert({
+    id: String(d.id),
+    owner_id: ownerId,
+    voucher_no: String(d.voucherNo || ''),
+    date: String(d.date || ''),
+    customer_name: String(d.customerName || ''),
+    phone: String(d.phone || ''),
+    address: String(d.address || ''),
+    courier_name: String(d.courierName || ''),
+    delivery_fee: Number(d.deliveryFee || 0),
+    cod_amount: Number(d.codAmount || 0),
+    status: String(d.status || 'pending'),
+    note: String(d.note || ''),
+    updated_at: new Date().toISOString(),
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function deleteSupabaseDelivery(id: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = getClientSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase not configured.' };
+  const { error } = await supabase.from('pos_deliveries').delete().eq('id', id);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+// ---------- Bulk Push / Pull Helpers ----------
 
 export async function pushPosDataDirectToSupabase(
   payload: SupabaseSyncPayload
@@ -337,47 +1021,53 @@ export async function pullPosDataDirectFromSupabase(
         stock: Number(r.stock),
         minStock: Number(r.min_stock),
       })),
-      sales: (salesRes.data || []).map((r) => ({
-        id: r.id,
-        ownerId: r.owner_id,
-        voucherNo: r.voucher_no,
-        date: r.date,
-        customerName: r.customer_name || '',
-        customerPhone: r.customer_phone || '',
-        paymentMethod: r.payment_method,
-        items: r.items || [],
-        subtotal: Number(r.subtotal),
-        discount: Number(r.discount),
-        total: Number(r.total),
-        totalCost: Number(r.total_cost),
-        profit: Number(r.profit),
-        paidAmount: Number(r.paid_amount),
-        note: r.note || '',
-      })),
-      purchases: (purchRes.data || []).map((r) => ({
-        id: r.id,
-        ownerId: r.owner_id,
-        refNo: r.ref_no,
-        date: r.date,
-        supplierName: r.supplier_name,
-        items: r.items || [],
-        totalAmount: Number(r.total_amount),
-        paidAmount: Number(r.paid_amount),
-        status: r.status,
-        note: r.note || '',
-      })),
-      stockLogs: (logsRes.data || []).map((r) => ({
-        id: r.id,
-        ownerId: r.owner_id,
-        productId: r.product_id,
-        productName: r.product_name,
-        type: r.type,
-        quantity: Number(r.quantity),
-        previousStock: Number(r.previous_stock),
-        newStock: Number(r.new_stock),
-        reason: r.reason,
-        date: r.date,
-      })),
+      sales: (salesRes.data || [])
+        .map((r) => ({
+          id: r.id,
+          ownerId: r.owner_id,
+          voucherNo: r.voucher_no,
+          date: r.date,
+          customerName: r.customer_name || '',
+          customerPhone: r.customer_phone || '',
+          paymentMethod: r.payment_method,
+          items: r.items || [],
+          subtotal: Number(r.subtotal),
+          discount: Number(r.discount),
+          total: Number(r.total),
+          totalCost: Number(r.total_cost),
+          profit: Number(r.profit),
+          paidAmount: Number(r.paid_amount),
+          note: r.note || '',
+        }))
+        .sort((a, b) => b.date.localeCompare(a.date)),
+      purchases: (purchRes.data || [])
+        .map((r) => ({
+          id: r.id,
+          ownerId: r.owner_id,
+          refNo: r.ref_no,
+          date: r.date,
+          supplierName: r.supplier_name,
+          items: r.items || [],
+          totalAmount: Number(r.total_amount),
+          paidAmount: Number(r.paid_amount),
+          status: r.status,
+          note: r.note || '',
+        }))
+        .sort((a, b) => b.date.localeCompare(a.date)),
+      stockLogs: (logsRes.data || [])
+        .map((r) => ({
+          id: r.id,
+          ownerId: r.owner_id,
+          productId: r.product_id,
+          productName: r.product_name,
+          type: r.type,
+          quantity: Number(r.quantity),
+          previousStock: Number(r.previous_stock),
+          newStock: Number(r.new_stock),
+          reason: r.reason,
+          date: r.date,
+        }))
+        .sort((a, b) => b.date.localeCompare(a.date)),
       debts: (debtsRes.data || []).map((r) => ({
         id: r.id,
         ownerId: r.owner_id,
@@ -392,29 +1082,33 @@ export async function pullPosDataDirectFromSupabase(
         status: r.status,
         note: r.note || '',
       })),
-      expenses: (expRes.data || []).map((r) => ({
-        id: r.id,
-        ownerId: r.owner_id,
-        date: r.date,
-        category: r.category,
-        title: r.title,
-        amount: Number(r.amount),
-        note: r.note || '',
-      })),
-      deliveries: (delivRes.data || []).map((r) => ({
-        id: r.id,
-        ownerId: r.owner_id,
-        voucherNo: r.voucher_no,
-        date: r.date,
-        customerName: r.customer_name,
-        phone: r.phone || '',
-        address: r.address,
-        courierName: r.courier_name,
-        deliveryFee: Number(r.delivery_fee),
-        codAmount: Number(r.cod_amount),
-        status: r.status,
-        note: r.note || '',
-      })),
+      expenses: (expRes.data || [])
+        .map((r) => ({
+          id: r.id,
+          ownerId: r.owner_id,
+          date: r.date,
+          category: r.category,
+          title: r.title,
+          amount: Number(r.amount),
+          note: r.note || '',
+        }))
+        .sort((a, b) => b.date.localeCompare(a.date)),
+      deliveries: (delivRes.data || [])
+        .map((r) => ({
+          id: r.id,
+          ownerId: r.owner_id,
+          voucherNo: r.voucher_no,
+          date: r.date,
+          customerName: r.customer_name,
+          phone: r.phone || '',
+          address: r.address,
+          courierName: r.courier_name,
+          deliveryFee: Number(r.delivery_fee),
+          codAmount: Number(r.cod_amount),
+          status: r.status,
+          note: r.note || '',
+        }))
+        .sort((a, b) => b.date.localeCompare(a.date)),
     };
 
     return { ok: true, data };

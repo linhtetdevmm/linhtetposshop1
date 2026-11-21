@@ -43,8 +43,12 @@ export const ConnectionStatusBadge: React.FC<ConnectionStatusBadgeProps> = ({ on
   const statusConfig = (() => {
     switch (cloudHealth.status) {
       case 'healthy': {
-        const bothConnected = isCloudMode && integrations.supabaseConfigured && cloudHealth.supabaseReachable;
-        const supaOnly = !isCloudMode && integrations.supabaseConfigured && cloudHealth.supabaseReachable;
+        const isSupabaseAccount = user?.provider === 'supabase';
+        const bothConnected =
+          isCloudMode && !isSupabaseAccount && integrations.supabaseConfigured && cloudHealth.supabaseReachable;
+        const supaPrimary =
+          isSupabaseAccount ||
+          (!isCloudMode && integrations.supabaseConfigured && cloudHealth.supabaseReachable);
         return {
           dotClass: 'bg-emerald-500 ring-4 ring-emerald-500/20',
           borderClass:
@@ -52,15 +56,15 @@ export const ConnectionStatusBadge: React.FC<ConnectionStatusBadgeProps> = ({ on
           textClass: 'text-emerald-800 dark:text-emerald-300',
           shortLabel:
             lang === 'my'
-              ? bothConnected
-                ? 'Cloud ချိတ်ဆက်ပြီး'
-                : supaOnly
+              ? supaPrimary
                 ? 'Supabase ချိတ်ပြီး'
+                : bothConnected
+                ? 'Cloud ချိတ်ဆက်ပြီး'
                 : 'Firebase ချိတ်ပြီး'
+              : supaPrimary
+              ? 'Supabase Live'
               : bothConnected
               ? 'Cloud Connected'
-              : supaOnly
-              ? 'Supabase Live'
               : 'Firebase Live',
           headline:
             lang === 'my'
@@ -245,11 +249,11 @@ export const ConnectionStatusBadge: React.FC<ConnectionStatusBadgeProps> = ({ on
               </span>
             </div>
 
-            {/* Firebase Cloud */}
+            {/* Active Cloud Account */}
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-titanium-600 dark:text-titanium-400">
                 <Cloud className="w-3.5 h-3.5 text-burgundy-700 dark:text-burgundy-300" />
-                Firebase Cloud
+                {user?.provider === 'supabase' ? 'Supabase Auth' : 'Firebase Cloud'}
               </span>
               <span
                 className={`font-medium truncate max-w-[160px] ${

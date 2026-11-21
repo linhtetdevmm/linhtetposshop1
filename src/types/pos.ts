@@ -22,6 +22,13 @@ export type AccessGateStatus =
   | 'device_limit'
   | 'granted';
 
+export interface AuthUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  provider: 'supabase' | 'firebase';
+}
+
 export interface AccessPass {
   code: string;
   label: string;

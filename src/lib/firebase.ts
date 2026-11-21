@@ -14,7 +14,30 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
+function resolveAuthDomain(): string {
+  const envDomain = (
+    import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string | undefined
+  )?.trim();
+  if (
+    envDomain === 'auto' &&
+    typeof window !== 'undefined' &&
+    window.location.hostname !== 'localhost' &&
+    window.location.hostname !== '127.0.0.1'
+  ) {
+    return window.location.host;
+  }
+  if (envDomain && envDomain !== 'auto') {
+    return envDomain.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  }
+  return firebaseConfig.authDomain;
+}
+
+export const activeAuthDomain = resolveAuthDomain();
+
+const app = initializeApp({
+  ...firebaseConfig,
+  authDomain: activeAuthDomain,
+});
 
 // Use persistent local IndexedDB cache for instant offline-first POS speed
 export const db = initializeFirestore(
@@ -34,6 +57,7 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 export const firebaseProjectInfo = {
   projectId: firebaseConfig.projectId,
   databaseId: firebaseConfig.firestoreDatabaseId,
+  authDomain: activeAuthDomain,
 };
 
 export enum OperationType {

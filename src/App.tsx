@@ -1,23 +1,15 @@
 import React, { useState } from 'react';
 import {
-  BarChart3,
-  Boxes,
-  CreditCard,
   Globe,
-  LayoutDashboard,
   LogIn,
   LogOut,
   Menu,
   Moon,
-  Package,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
-  Receipt,
-  Settings,
   Shield,
-  ShoppingBag,
-  ShoppingCart,
   Sun,
-  Truck,
   X,
 } from 'lucide-react';
 import type { NavTab, Sale } from './types/pos';
@@ -66,31 +58,50 @@ function PosShell() {
 
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [settingsTab, setSettingsTab] = useState<'profile' | 'cloud' | 'guide'>('profile');
+  const [sidebarExpanded, setSidebarExpanded] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('shwepos_sidebar_expanded') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [voucherSale, setVoucherSale] = useState<Sale | null>(null);
+
+  const toggleSidebar = () => {
+    setSidebarExpanded((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('shwepos_sidebar_expanded', String(next));
+      } catch {
+        // Ignore storage errors
+      }
+      return next;
+    });
+  };
 
   // Strict Access Gate: unauthorized or expired subscriptions cannot enter the POS shell
   if (accessStatus !== 'granted' || isSubscriptionExpired) {
     return <AccessGateScreen />;
   }
 
-  const navItems: { id: NavTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { id: 'dashboard', label: t('navDashboard'), icon: LayoutDashboard },
-    { id: 'pos', label: t('navPos'), icon: ShoppingCart },
-    { id: 'products', label: t('navProducts'), icon: Package },
-    { id: 'purchases', label: t('navPurchases'), icon: ShoppingBag },
-    { id: 'stock', label: t('navStock'), icon: Boxes },
-    { id: 'debts', label: t('navDebts'), icon: CreditCard },
-    { id: 'expenses', label: t('navExpenses'), icon: Receipt },
-    { id: 'delivery', label: t('navDelivery'), icon: Truck },
-    { id: 'reports', label: t('navReports'), icon: BarChart3 },
-    { id: 'settings', label: t('navSettings'), icon: Settings },
+  const navItems: { id: NavTab; label: string; emoji: string }[] = [
+    { id: 'dashboard', label: t('navDashboard'), emoji: '📊' },
+    { id: 'pos', label: t('navPos'), emoji: '🛒' },
+    { id: 'products', label: t('navProducts'), emoji: '📦' },
+    { id: 'purchases', label: t('navPurchases'), emoji: '🛍️' },
+    { id: 'stock', label: t('navStock'), emoji: '🗃️' },
+    { id: 'debts', label: t('navDebts'), emoji: '💳' },
+    { id: 'expenses', label: t('navExpenses'), emoji: '🧾' },
+    { id: 'delivery', label: t('navDelivery'), emoji: '🚚' },
+    { id: 'reports', label: t('navReports'), emoji: '📈' },
+    { id: 'settings', label: t('navSettings'), emoji: '⚙️' },
     ...(isAdmin
       ? [
           {
             id: 'admin' as NavTab,
             label: lang === 'my' ? 'Admin ဝင်ခွင့်စီမံမှု' : 'Admin Access',
-            icon: Shield,
+            emoji: '🛡️',
           },
         ]
       : []),
@@ -106,104 +117,198 @@ function PosShell() {
 
   return (
     <div className="min-h-screen flex bg-titanium-50 dark:bg-titanium-950 text-titanium-900 dark:text-titanium-50">
-      {/* Desktop Sidebar (256px) */}
-      <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:shrink-0 bg-white dark:bg-titanium-900 border-r border-titanium-200 dark:border-titanium-800 sticky top-0 h-screen">
-        {/* Brand Block */}
-        <div className="h-16 px-5 flex items-center border-b border-titanium-200 dark:border-titanium-800">
-          <div className="min-w-0">
-            <div className="text-sm font-bold tracking-tight text-burgundy-800 dark:text-burgundy-300 truncate">
-              {shop.shopName}
+      {/* Desktop Collapsible Sidebar: Emoji-only by default, click top toggle button to reveal labels */}
+      <aside
+        className={`hidden lg:flex lg:flex-col lg:shrink-0 bg-white dark:bg-titanium-900 border-r border-titanium-200 dark:border-titanium-800 sticky top-0 h-screen transition-all duration-200 ${
+          sidebarExpanded ? 'lg:w-64' : 'lg:w-[74px]'
+        }`}
+      >
+        {/* Top Header & Toggle Button */}
+        <div
+          className={`h-16 flex items-center border-b border-titanium-200 dark:border-titanium-800 ${
+            sidebarExpanded ? 'px-4 justify-between gap-2' : 'px-2 justify-center'
+          }`}
+        >
+          {sidebarExpanded && (
+            <div className="min-w-0">
+              <div className="text-sm font-bold tracking-tight text-burgundy-800 dark:text-burgundy-300 truncate">
+                {shop.shopName}
+              </div>
+              <div
+                className={`text-[11px] truncate ${
+                  !isAdmin && remainingDays !== null && remainingDays <= 5
+                    ? 'text-amber-700 dark:text-amber-300 font-medium'
+                    : 'text-titanium-500 dark:text-titanium-400'
+                }`}
+              >
+                {isAdmin
+                  ? 'Super Admin · MMK'
+                  : remainingDays !== null && subscriptionExpiry
+                  ? lang === 'my'
+                    ? `${remainingDays} ရက်ကျန် (${formatExpiryDate(subscriptionExpiry)})`
+                    : `${remainingDays}d left (${formatExpiryDate(subscriptionExpiry)})`
+                  : isCloudMode
+                  ? `${t('cloudSynced')} · MMK`
+                  : `${t('localDemoMode')} · MMK`}
+              </div>
             </div>
-            <div
-              className={`text-[11px] truncate ${
-                !isAdmin && remainingDays !== null && remainingDays <= 5
-                  ? 'text-amber-700 dark:text-amber-300 font-medium'
-                  : 'text-titanium-500 dark:text-titanium-400'
-              }`}
-            >
-              {isAdmin
-                ? 'Super Admin · MMK'
-                : remainingDays !== null && subscriptionExpiry
+          )}
+
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            title={
+              sidebarExpanded
                 ? lang === 'my'
-                  ? `${remainingDays} ရက်ကျန် (${formatExpiryDate(subscriptionExpiry)})`
-                  : `${remainingDays}d left (${formatExpiryDate(subscriptionExpiry)})`
-                : isCloudMode
-                ? `${t('cloudSynced')} · MMK`
-                : `${t('localDemoMode')} · MMK`}
-            </div>
-          </div>
+                  ? 'ဘေးဘား ကျုံ့မည် (Emoji သာပြ)'
+                  : 'Collapse sidebar (Emoji only)'
+                : lang === 'my'
+                ? 'ဘေးဘား ချဲ့မည် (စာသားများပြ)'
+                : 'Expand sidebar (Show labels)'
+            }
+            aria-label={sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+            aria-expanded={sidebarExpanded}
+            className="w-10 h-10 inline-flex items-center justify-center rounded-xl text-burgundy-800 dark:text-burgundy-300 bg-burgundy-50/80 dark:bg-burgundy-950/60 hover:bg-burgundy-100 dark:hover:bg-burgundy-900/70 border border-burgundy-200/70 dark:border-burgundy-800/60 transition-colors shrink-0"
+          >
+            {sidebarExpanded ? (
+              <PanelLeftClose className="w-4 h-4" />
+            ) : (
+              <PanelLeftOpen className="w-4 h-4" />
+            )}
+          </button>
         </div>
 
         {/* Navigation Links */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
+        <nav className={`flex-1 overflow-y-auto py-3 space-y-1 ${sidebarExpanded ? 'px-3' : 'px-2'}`}>
           {navItems.map((item) => {
-            const Icon = item.icon;
             const active = activeTab === item.id;
             return (
               <button
                 key={item.id}
+                type="button"
                 onClick={() => handleSelectNav(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors text-left ${
+                title={item.label}
+                aria-label={item.label}
+                className={`w-full flex items-center rounded-xl transition-colors ${
+                  sidebarExpanded ? 'gap-3 px-3 py-2.5 text-left' : 'justify-center py-2.5 px-1'
+                } ${
                   active
-                    ? 'bg-burgundy-50 dark:bg-burgundy-950 text-burgundy-800 dark:text-burgundy-300 font-semibold'
+                    ? 'bg-burgundy-50 dark:bg-burgundy-950 text-burgundy-800 dark:text-burgundy-200 font-semibold ring-1 ring-burgundy-200/80 dark:ring-burgundy-800/70'
                     : 'text-titanium-600 dark:text-titanium-400 hover:bg-titanium-100/80 dark:hover:bg-titanium-800/70 hover:text-titanium-900 dark:hover:text-titanium-50'
                 }`}
               >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span className="truncate">{item.label}</span>
+                <span className="text-xl leading-none shrink-0 select-none" aria-hidden="true">
+                  {item.emoji}
+                </span>
+                {sidebarExpanded && <span className="text-sm truncate">{item.label}</span>}
               </button>
             );
           })}
         </nav>
 
         {/* Sidebar Footer: Account & Theme/Lang Controls */}
-        <div className="p-3 border-t border-titanium-200 dark:border-titanium-800 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <button
-              onClick={() => setLang(lang === 'my' ? 'en' : 'my')}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-titanium-700 dark:text-titanium-200 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-md transition-colors whitespace-nowrap"
-            >
-              <Globe className="w-3.5 h-3.5" />
-              {lang === 'my' ? 'မြန်မာ / EN' : 'EN / မြန်မာ'}
-            </button>
-            <button
-              onClick={toggleDarkMode}
-              className="p-1.5 text-titanium-700 dark:text-burgundy-300 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-md transition-colors"
-              aria-label={darkMode ? t('lightMode') : t('darkMode')}
-              title={darkMode ? t('lightMode') : t('darkMode')}
-            >
-              {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-          </div>
-
-          {user ? (
-            <div className="flex items-center justify-between gap-2 px-2 py-1.5">
-              <div className="min-w-0">
-                <div className="text-xs font-semibold text-titanium-900 dark:text-titanium-50 truncate">
-                  {user.displayName || user.email}
-                </div>
-                <div className="text-[11px] text-titanium-500 dark:text-titanium-400 truncate">
-                  {user.email}
-                </div>
+        <div
+          className={`border-t border-titanium-200 dark:border-titanium-800 space-y-2 ${
+            sidebarExpanded ? 'p-3' : 'p-2 flex flex-col items-center'
+          }`}
+        >
+          {sidebarExpanded ? (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLang(lang === 'my' ? 'en' : 'my')}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-titanium-700 dark:text-titanium-200 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-md transition-colors whitespace-nowrap"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  {lang === 'my' ? 'မြန်မာ / EN' : 'EN / မြန်မာ'}
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleDarkMode}
+                  className="p-1.5 text-titanium-700 dark:text-burgundy-300 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-md transition-colors"
+                  aria-label={darkMode ? t('lightMode') : t('darkMode')}
+                  title={darkMode ? t('lightMode') : t('darkMode')}
+                >
+                  {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                </button>
               </div>
-              <button
-                onClick={logout}
-                className="p-1.5 text-titanium-500 hover:text-red-600 dark:hover:text-red-400 rounded-md transition-colors shrink-0"
-                title={t('signOut')}
-                aria-label={t('signOut')}
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
+
+              {user ? (
+                <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-titanium-900 dark:text-titanium-50 truncate">
+                      {user.displayName || user.email}
+                    </div>
+                    <div className="text-[11px] text-titanium-500 dark:text-titanium-400 truncate">
+                      {user.email}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={logout}
+                    className="p-1.5 text-titanium-500 hover:text-red-600 dark:hover:text-red-400 rounded-md transition-colors shrink-0"
+                    title={t('signOut')}
+                    aria-label={t('signOut')}
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={loginWithGoogle}
+                  disabled={signingIn}
+                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-burgundy-800 dark:text-burgundy-200 bg-white dark:bg-titanium-950 border border-titanium-300 dark:border-titanium-700 hover:bg-burgundy-50 dark:hover:bg-burgundy-950/60 disabled:opacity-50 rounded-lg transition-colors whitespace-nowrap"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  {signingIn ? '...' : t('signInGoogle')}
+                </button>
+              )}
+            </>
           ) : (
-            <button
-              onClick={loginWithGoogle}
-              disabled={signingIn}
-              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-burgundy-800 dark:text-burgundy-200 bg-white dark:bg-titanium-950 border border-titanium-300 dark:border-titanium-700 hover:bg-burgundy-50 dark:hover:bg-burgundy-950/60 disabled:opacity-50 rounded-lg transition-colors whitespace-nowrap"
-            >
-              <LogIn className="w-3.5 h-3.5" />
-              {signingIn ? '...' : t('signInGoogle')}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setLang(lang === 'my' ? 'en' : 'my')}
+                title={lang === 'my' ? 'Switch to EN' : 'မြန်မာဘာသာ'}
+                aria-label={lang === 'my' ? 'Switch to EN' : 'မြန်မာဘာသာ'}
+                className="w-10 h-10 inline-flex items-center justify-center text-base bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-xl transition-colors"
+              >
+                🌐
+              </button>
+              <button
+                type="button"
+                onClick={toggleDarkMode}
+                title={darkMode ? t('lightMode') : t('darkMode')}
+                aria-label={darkMode ? t('lightMode') : t('darkMode')}
+                className="w-10 h-10 inline-flex items-center justify-center text-base bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-xl transition-colors"
+              >
+                {darkMode ? '☀️' : '🌙'}
+              </button>
+              {user ? (
+                <button
+                  type="button"
+                  onClick={logout}
+                  title={`${t('signOut')} (${user.email || ''})`}
+                  aria-label={t('signOut')}
+                  className="w-10 h-10 inline-flex items-center justify-center text-titanium-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={loginWithGoogle}
+                  disabled={signingIn}
+                  title={t('signInGoogle')}
+                  aria-label={t('signInGoogle')}
+                  className="w-10 h-10 inline-flex items-center justify-center text-burgundy-800 dark:text-burgundy-200 bg-burgundy-50 dark:bg-burgundy-950/50 hover:bg-burgundy-100 rounded-xl transition-colors disabled:opacity-50"
+                >
+                  <LogIn className="w-4 h-4" />
+                </button>
+              )}
+            </>
           )}
         </div>
       </aside>
@@ -230,7 +335,6 @@ function PosShell() {
             </div>
             <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
               {navItems.map((item) => {
-                const Icon = item.icon;
                 const active = activeTab === item.id;
                 return (
                   <button
@@ -242,7 +346,9 @@ function PosShell() {
                         : 'text-titanium-600 dark:text-titanium-400'
                     }`}
                   >
-                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="text-lg leading-none shrink-0" aria-hidden="true">
+                      {item.emoji}
+                    </span>
                     <span className="truncate">{item.label}</span>
                   </button>
                 );

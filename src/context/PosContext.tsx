@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { onAuthStateChanged, type User } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import {
   collection,
   deleteDoc,
@@ -38,6 +38,7 @@ import {
   sanitizeId,
   type AccessGateStatus,
   type AccessPass,
+  type AuthUser,
   type Debt,
   type Delivery,
   type DeliveryStatus,
@@ -66,9 +67,30 @@ import {
 } from '../lib/accessControl';
 import {
   checkClientSupabaseHealth,
+  deleteSupabaseDebt,
+  deleteSupabaseDelivery,
+  deleteSupabaseExpense,
+  deleteSupabaseProduct,
+  deleteSupabasePurchase,
+  deleteSupabaseSale,
+  deleteSupabaseStockLog,
+  fetchSupabaseUserLicense,
   isClientSupabaseConfigured,
+  onSupabaseAuthChange,
   pullPosDataDirectFromSupabase,
   pushPosDataDirectToSupabase,
+  redeemSupabaseAccessPass,
+  signInWithSupabaseEmail,
+  signOutSupabase,
+  signUpWithSupabaseEmail,
+  upsertSupabaseDebt,
+  upsertSupabaseDelivery,
+  upsertSupabaseExpense,
+  upsertSupabaseProduct,
+  upsertSupabasePurchase,
+  upsertSupabaseSale,
+  upsertSupabaseShop,
+  upsertSupabaseStockLog,
 } from '../lib/supabaseSync';
 
 const LOCAL_STORAGE_KEY = 'shwepos_local_state_v1';
@@ -97,9 +119,11 @@ interface ToastMessage {
 }
 
 interface PosContextValue {
-  user: User | null;
+  user: AuthUser | null;
   authReady: boolean;
+  supabaseAuthReady: boolean;
   signingIn: boolean;
+  authError: string | null;
   isAdmin: boolean;
   accessStatus: AccessGateStatus;
   activeLicense: UserLicense | null;
@@ -136,6 +160,12 @@ interface PosContextValue {
   deliveries: Delivery[];
 
   // Auth Actions
+  loginWithSupabase: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  registerWithSupabase: (
+    email: string,
+    password: string,
+    displayName?: string
+  ) => Promise<{ ok: boolean; error?: string; needsEmailConfirm?: boolean }>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   seedCloudWithSampleData: () => Promise<void>;
@@ -284,8 +314,13 @@ function loadLocalData() {
 }
 
 export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState(false);
+  const [supabaseUser, setSupabaseUser] = useState<AuthUser | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<AuthUser | null>(null);
+  const [supabaseAuthLoaded, setSupabaseAuthLoaded] = useState(false);
+  const [firebaseAuthLoaded, setFirebaseAuthLoaded] = useState(false);
+  const user: AuthUser | null = supabaseUser ?? firebaseUser;
+  const authReady = supabaseAuthLoaded && firebaseAuthLoaded;
+  const supabaseAuthReady = isClientSupabaseConfigured();
   const [loadingData, setLoadingData] = useState(false);
   const [lang, setLangState] = useState<Language>(() => {
     const saved = localStorage.getItem('shwepos_lang');
@@ -324,6 +359,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [deliveries, setDeliveries] = useState<Delivery[]>(initialLocal.deliveries);
 
   const [signingIn, setSigningIn] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const signingInRef = useRef(false);
   const shopDocReadyRef = useRef<string | null>(null);
   const [isSecondaryAdmin, setIsSecondaryAdmin] = useState(false);
@@ -602,34 +638,55 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  // Firebase Auth listener
+  // Dual Auth listeners (Supabase primary when signed in + Firebase fallback)
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-      setAuthReady(true);
-      if (!firebaseUser) {
-        shopDocReadyRef.current = null;
-        setIsSecondaryAdmin(false);
-        setActiveLicense(null);
-        setActivePass(null);
-        setLicenseReady(true);
-        setAdminTargetShopId(null);
-        setAdminTargetShopLabel('');
-        const local = loadLocalData();
-        setShop(local.shop);
-        setProducts(local.products);
-        setSales(local.sales);
-        setPurchases(local.purchases);
-        setStockLogs(local.stockLogs);
-        setDebts(local.debts);
-        setExpenses(local.expenses);
-        setDeliveries(local.deliveries);
-      } else {
-        setLicenseReady(false);
-      }
+    const unsubSb = onSupabaseAuthChange((sbUser, resolved) => {
+      setSupabaseUser(sbUser);
+      if (resolved) setSupabaseAuthLoaded(true);
     });
-    return () => unsub();
+    const unsubFb = onAuthStateChanged(auth, (fbUser) => {
+      setFirebaseUser(
+        fbUser
+          ? {
+              uid: fbUser.uid,
+              email: fbUser.email,
+              displayName: fbUser.displayName,
+              provider: 'firebase',
+            }
+          : null
+      );
+      setFirebaseAuthLoaded(true);
+    });
+    return () => {
+      unsubSb();
+      unsubFb();
+    };
   }, []);
+
+  // Reset shop/license state when user logs out or switches account
+  useEffect(() => {
+    if (!authReady) return;
+    if (!user) {
+      shopDocReadyRef.current = null;
+      setIsSecondaryAdmin(false);
+      setActiveLicense(null);
+      setActivePass(null);
+      setLicenseReady(true);
+      setAdminTargetShopId(null);
+      setAdminTargetShopLabel('');
+      const local = loadLocalData();
+      setShop(local.shop);
+      setProducts(local.products);
+      setSales(local.sales);
+      setPurchases(local.purchases);
+      setStockLogs(local.stockLogs);
+      setDebts(local.debts);
+      setExpenses(local.expenses);
+      setDeliveries(local.deliveries);
+    } else {
+      setLicenseReady(false);
+    }
+  }, [authReady, user?.uid, user?.provider]);
 
   // Check optional secondary admin record (/admins/{uid}) for non-primary emails
   useEffect(() => {
@@ -639,6 +696,10 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     if (isPrimaryAdminEmail(user.email)) {
       setIsSecondaryAdmin(true);
+      return;
+    }
+    if (user.provider === 'supabase') {
+      setIsSecondaryAdmin(false);
       return;
     }
     let cancelled = false;
@@ -654,7 +715,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [authReady, user]);
 
-  // Real-time license & pass enforcement for regular Gmail users
+  // Real-time license & pass enforcement for regular users (Supabase + Firebase)
   useEffect(() => {
     if (!authReady || !user) return;
     if (isAdmin) {
@@ -663,6 +724,27 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setLicenseReady(false);
+
+    if (user.provider === 'supabase') {
+      let active = true;
+      fetchSupabaseUserLicense(user.uid)
+        .then(({ license, pass }) => {
+          if (!active) return;
+          setActiveLicense(license);
+          setActivePass(pass);
+          setLicenseReady(true);
+        })
+        .catch(() => {
+          if (!active) return;
+          setActiveLicense(null);
+          setActivePass(null);
+          setLicenseReady(true);
+        });
+      return () => {
+        active = false;
+      };
+    }
+
     let passUnsub: (() => void) | null = null;
 
     const licenseUnsub = onSnapshot(
@@ -769,12 +851,26 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return getRemainingDays(subscriptionExpiry, clockTick);
   }, [user, isAdmin, subscriptionExpiry, clockTick]);
 
-  // Force re-fetch subscription_expiry from Firebase server (e.g., after Admin renews license)
+  // Force re-fetch subscription_expiry from server (Supabase or Firebase)
   const refreshSubscriptionStatus = useCallback(async (): Promise<boolean> => {
     setClockTick(Date.now());
     if (!user) return false;
     if (isAdmin) return true;
     try {
+      if (user.provider === 'supabase') {
+        const { license, pass } = await fetchSupabaseUserLicense(user.uid);
+        setActiveLicense(license);
+        setActivePass(pass);
+        setLicenseReady(true);
+        if (!license || license.status !== 'active') return false;
+        const now = Date.now();
+        const licMs = license.subscriptionExpiryMs || license.expiresAtMs || 0;
+        const passMs = pass?.subscriptionExpiryMs || pass?.expiresAtMs || 0;
+        const effectiveMs = licMs > 0 && passMs > 0 ? Math.min(licMs, passMs) : licMs;
+        const passOk = !pass || pass.status === 'active';
+        return passOk && effectiveMs > now;
+      }
+
       const licSnap = await getDocFromServer(doc(db, 'userLicenses', user.uid));
       if (!licSnap.exists()) {
         setActiveLicense(null);
@@ -870,6 +966,72 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ok: false,
           error: lang === 'my' ? 'Access Pass ပုံစံ မမှန်ကန်ပါ။' : 'Invalid Access Pass format.',
         };
+      }
+
+      if (user.provider === 'supabase') {
+        const res = await redeemSupabaseAccessPass(code, deviceId);
+        if (!res.ok) {
+          if (res.code === 'not_found') {
+            return {
+              ok: false,
+              error:
+                lang === 'my'
+                  ? 'ဤ Access Pass မရှိပါ။ Admin ထံမှ မှန်ကန်သော Pass ကို စစ်ဆေးပါ။'
+                  : 'Access Pass not found. Please check your code with Admin.',
+            };
+          }
+          if (res.code === 'revoked') {
+            return {
+              ok: false,
+              error:
+                lang === 'my'
+                  ? 'ဤ Pass ကို Admin မှ ပိတ်ထားပြီးဖြစ်ပါသည်။'
+                  : 'This Access Pass has been revoked by Admin.',
+            };
+          }
+          if (res.code === 'expired') {
+            return {
+              ok: false,
+              error:
+                lang === 'my'
+                  ? 'ဤ Pass သည် သက်တမ်းကုန်ဆုံးသွားပြီးဖြစ်ပါသည်။'
+                  : 'This Access Pass has already expired.',
+            };
+          }
+          if (res.code === 'assigned_other') {
+            return {
+              ok: false,
+              error:
+                lang === 'my'
+                  ? 'ဤ Pass ကို အခြားအကောင့်တစ်ခုတွင် အသုံးပြုပြီးဖြစ်ပါသည်။'
+                  : 'This Access Pass is already bound to another account.',
+            };
+          }
+          if (res.code === 'device_limit') {
+            return {
+              ok: false,
+              error:
+                lang === 'my'
+                  ? `စက်အရေအတွက် (${res.maxDevices || 1} လုံး) ပြည့်နေပါပြီ။ Admin ထံတွင် Device Reset တောင်းပါ။`
+                  : `Device limit (${res.maxDevices || 1}) reached. Ask Admin to reset devices.`,
+            };
+          }
+          return {
+            ok: false,
+            error:
+              res.error ||
+              (lang === 'my'
+                ? 'Supabase SQL Schema (redeem_shwepos_pass) ကို Supabase SQL Editor တွင် Run ထားခြင်း ရှိ/မရှိ စစ်ဆေးပါ။'
+                : 'Failed to redeem pass. Ensure supabase_schema.sql has been run in Supabase SQL Editor.'),
+          };
+        }
+        await refreshSubscriptionStatus();
+        showToast(
+          lang === 'my'
+            ? 'Access Pass အတည်ပြုပြီးပါပြီ။ ကြိုဆိုပါသည်!'
+            : 'Access Pass activated! Welcome to ShwePOS.'
+        );
+        return { ok: true };
       }
 
       try {
@@ -1004,15 +1166,66 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       }
     },
-    [user, deviceId, lang, showToast]
+    [user, deviceId, lang, showToast, refreshSubscriptionStatus]
   );
 
-  // Firestore real-time listeners (strictly gated on authReady && user && accessStatus === 'granted')
+  // Cloud POS data loader (Supabase PostgreSQL OR Firestore real-time listeners)
   useEffect(() => {
     if (!authReady || !user || accessStatus !== 'granted') return;
     let active = true;
     const uid = activeShopId;
     setLoadingData(true);
+
+    if (user.provider === 'supabase') {
+      pullPosDataDirectFromSupabase(uid)
+        .then(async (res) => {
+          if (!active) return;
+          if (!res.ok || !res.data) {
+            if (res.error) {
+              showToast(res.error, 'error');
+            }
+            setLoadingData(false);
+            return;
+          }
+          let shopData: ShopSettings | null = res.data.shop
+            ? { ...res.data.shop, ownerId: uid, currency: 'MMK' }
+            : null;
+          if (!shopData) {
+            shopData = {
+              ownerId: uid,
+              shopName: clampString(
+                user.displayName && uid === user.uid ? `${user.displayName}'s Shop` : 'Shwe Yaung Retail',
+                120
+              ),
+              shopSubtitle: 'POS & Inventory Management',
+              phone: '',
+              address: '',
+              receiptFooter: 'ဝယ်ယူအားပေးမှုအတွက် အထူးကျေးဇူးတင်ပါသည်။',
+              currency: 'MMK',
+              defaultMarginPercent: 25,
+              telegramEnabled: false,
+            };
+            await upsertSupabaseShop(uid, shopData);
+          }
+          if (!active) return;
+          setShop(shopData);
+          setProducts((res.data.products || []).map((item) => ({ ...item, ownerId: uid })));
+          setSales((res.data.sales || []).map((item) => ({ ...item, ownerId: uid })));
+          setPurchases((res.data.purchases || []).map((item) => ({ ...item, ownerId: uid })));
+          setStockLogs((res.data.stockLogs || []).map((item) => ({ ...item, ownerId: uid })));
+          setDebts((res.data.debts || []).map((item) => ({ ...item, ownerId: uid })));
+          setExpenses((res.data.expenses || []).map((item) => ({ ...item, ownerId: uid })));
+          setDeliveries((res.data.deliveries || []).map((item) => ({ ...item, ownerId: uid })));
+          setLoadingData(false);
+        })
+        .catch((err) => {
+          console.error('Supabase load error:', err);
+          if (active) setLoadingData(false);
+        });
+      return () => {
+        active = false;
+      };
+    }
 
     const unsubscribers: (() => void)[] = [];
 
@@ -1082,14 +1295,86 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       active = false;
       unsubscribers.forEach((fn) => fn());
     };
-  }, [authReady, user, accessStatus, activeShopId, ensureShopDoc]);
+  }, [authReady, user, accessStatus, activeShopId, ensureShopDoc, showToast]);
+
+  const loginWithSupabase = useCallback(
+    async (email: string, password: string): Promise<{ ok: boolean; error?: string }> => {
+      setSigningIn(true);
+      setAuthError(null);
+      try {
+        const res = await signInWithSupabaseEmail(email, password);
+        if (!res.ok) {
+          const raw = res.error || '';
+          const friendly = raw.toLowerCase().includes('invalid login credentials')
+            ? lang === 'my'
+              ? 'Email သို့မဟုတ် Password မှားယွင်းနေပါသည်။'
+              : 'Invalid email or password.'
+            : raw.toLowerCase().includes('email not confirmed')
+            ? lang === 'my'
+              ? 'သင့် Email ကို အတည်ပြုရန် Inbox ထဲမှ Confirm Link ကို နှိပ်ပေးပါ (သို့မဟုတ် Supabase Auth Settings တွင် Confirm Email ကို ပိတ်ထားပါ)။'
+              : 'Email not confirmed yet. Check your inbox or disable Confirm Email in Supabase Auth settings.'
+            : raw || (lang === 'my' ? 'ဝင်ရောက်မှု မအောင်မြင်ပါ။' : 'Sign-in failed.');
+          setAuthError(friendly);
+          return { ok: false, error: friendly };
+        }
+        showToast(
+          lang === 'my' ? 'Supabase အကောင့်ဖြင့် ဝင်ရောက်ပြီးပါပြီ။' : 'Signed in with Supabase.'
+        );
+        return { ok: true };
+      } finally {
+        setSigningIn(false);
+      }
+    },
+    [lang, showToast]
+  );
+
+  const registerWithSupabase = useCallback(
+    async (
+      email: string,
+      password: string,
+      displayName?: string
+    ): Promise<{ ok: boolean; error?: string; needsEmailConfirm?: boolean }> => {
+      setSigningIn(true);
+      setAuthError(null);
+      try {
+        const res = await signUpWithSupabaseEmail(email, password, displayName);
+        if (!res.ok) {
+          const raw = res.error || '';
+          const friendly = raw.toLowerCase().includes('already registered')
+            ? lang === 'my'
+              ? 'ဤ Email သည် အကောင့်ဖွင့်ထားပြီးသားဖြစ်ပါသည်။ Sign In ဖြင့် ဝင်ရောက်ပါ။'
+              : 'This email is already registered. Please sign in instead.'
+            : raw || (lang === 'my' ? 'အကောင့်ဖွင့်မှု မအောင်မြင်ပါ။' : 'Registration failed.');
+          setAuthError(friendly);
+          return { ok: false, error: friendly };
+        }
+        if (res.needsEmailConfirm) {
+          const info =
+            lang === 'my'
+              ? 'အကောင့်ဖွင့်ပြီးပါပြီ! သင့် Email Inbox ထဲမှ အတည်ပြုလင့်ခ်ကို နှိပ်ပြီး ဝင်ရောက်ပါ (သို့မဟုတ် Supabase Dashboard > Authentication > Providers > Email တွင် Confirm email ကို ပိတ်ထားပါ)။'
+              : 'Account created! Please confirm your email from your inbox (or turn off "Confirm email" in Supabase Dashboard > Authentication > Providers > Email for instant sign-in).';
+          showToast(info, 'info');
+          return { ok: true, needsEmailConfirm: true };
+        }
+        showToast(
+          lang === 'my' ? 'အကောင့်အသစ် ဖွင့်ပြီး ဝင်ရောက်ပြီးပါပြီ။' : 'Account created and signed in.'
+        );
+        return { ok: true, needsEmailConfirm: false };
+      } finally {
+        setSigningIn(false);
+      }
+    },
+    [lang, showToast]
+  );
 
   const loginWithGoogle = useCallback(async () => {
     if (signingInRef.current) return;
     signingInRef.current = true;
     setSigningIn(true);
+    setAuthError(null);
     try {
       await signInWithGoogle();
+      setAuthError(null);
       showToast(
         lang === 'my'
           ? 'Google အကောင့်ဖြင့် ဝင်ရောက်ပြီးပါပြီ။'
@@ -1097,24 +1382,46 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     } catch (err) {
       const code = (err as { code?: string })?.code;
+      const host = typeof window !== 'undefined' ? window.location.hostname : '';
       if (code === 'auth/cancelled-popup-request' || code === 'auth/popup-closed-by-user') {
+        const msg =
+          lang === 'my'
+            ? 'Google ဝင်ရောက်သည့် Popup ကို ပိတ်လိုက်ပါသည်။ ("Can\'t Connect to the Server" ပြပါက VPN ဖွင့်၍ သို့မဟုတ် Vercel Auth Proxy ချိတ်ဆက်ပြီး ထပ်စမ်းကြည့်ပါ။)'
+            : 'Google sign-in popup was closed. (If it showed "Can\'t Connect to the Server", your network may block firebaseapp.com — enable VPN or configure Vercel Auth Proxy.)';
+        setAuthError(msg);
         showToast(
           lang === 'my' ? 'Google ဝင်ရောက်ခြင်းကို ပိတ်လိုက်ပါသည်။' : 'Google sign-in popup was closed.',
           'info'
         );
-      } else if (code === 'auth/popup-blocked') {
-        showToast(
+      } else if (code === 'auth/unauthorized-domain') {
+        const msg =
           lang === 'my'
-            ? 'Browser မှ Popup ကို ပိတ်ထားပါသည်။ Popup ဖွင့်ပေးပြီး ထပ်စမ်းကြည့်ပါ။'
-            : 'Popup was blocked by your browser. Please allow popups and try again.',
-          'error'
-        );
+            ? `ဤ Domain (${host}) ကို Firebase Authentication > Settings > Authorized domains ထဲတွင် ထည့်သွင်းခွင့်ပြုထားခြင်း မရှိသေးပါ။`
+            : `Domain (${host}) is not listed in Firebase Console > Authentication > Settings > Authorized domains.`;
+        setAuthError(msg);
+        showToast(msg, 'error');
+      } else if (code === 'auth/network-request-failed') {
+        const msg =
+          lang === 'my'
+            ? 'Firebase Auth Server သို့ ချိတ်ဆက်၍မရပါ။ အင်တာနက်လိုင်းမှ firebaseapp.com ကို ပိတ်ထားနိုင်သဖြင့် VPN ဖွင့်၍ သို့မဟုတ် Chrome ဖြင့် ထပ်စမ်းကြည့်ပါ။'
+            : 'Cannot connect to Firebase Auth server. Your network may block firebaseapp.com — try enabling VPN or using the Vercel auth proxy.';
+        setAuthError(msg);
+        showToast(msg, 'error');
+      } else if (code === 'auth/popup-blocked') {
+        const msg =
+          lang === 'my'
+            ? 'Browser မှ Popup ကို ပိတ်ထားပါသည်။ Safari/Browser Settings တွင် Popup ဖွင့်ပေးပြီး ထပ်စမ်းကြည့်ပါ။'
+            : 'Popup was blocked by your browser. Please allow popups and try again.';
+        setAuthError(msg);
+        showToast(msg, 'error');
       } else {
         console.error('Sign-in failed:', err);
-        showToast(
-          lang === 'my' ? 'Google ဝင်ရောက်မှု မအောင်မြင်ပါ။' : 'Google Sign-In failed.',
-          'error'
-        );
+        const msg =
+          lang === 'my'
+            ? `Google ဝင်ရောက်မှု မအောင်မြင်ပါ (${code || 'unknown'})။`
+            : `Google Sign-In failed (${code || 'unknown'}).`;
+        setAuthError(msg);
+        showToast(msg, 'error');
       }
     } finally {
       signingInRef.current = false;
@@ -1123,9 +1430,10 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [lang, showToast]);
 
   const logout = useCallback(async () => {
+    setAuthError(null);
     setAdminTargetShopId(null);
     setAdminTargetShopLabel('');
-    await signOutUser();
+    await Promise.all([signOutSupabase(), signOutUser().catch(() => {})]);
     showToast(lang === 'my' ? 'အကောင့်မှ ထွက်လိုက်ပါပြီ။' : 'Signed out.', 'info');
   }, [lang, showToast]);
 
@@ -1143,6 +1451,38 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setExpenses(sample.expenses);
       setDeliveries(sample.deliveries);
       showToast(lang === 'my' ? 'နမူနာဒေတာ ထည့်သွင်းပြီးပါပြီ။' : 'Sample shop data loaded.');
+      return;
+    }
+
+    if (user.provider === 'supabase') {
+      const res = await pushPosDataDirectToSupabase({
+        ownerId: uid,
+        shop: sample.shop,
+        products: sample.products,
+        sales: sample.sales,
+        purchases: sample.purchases,
+        stockLogs: sample.stockLogs,
+        debts: sample.debts,
+        expenses: sample.expenses,
+        deliveries: sample.deliveries,
+      });
+      if (!res.ok) {
+        showToast(res.error || 'Supabase error', 'error');
+        return;
+      }
+      setShop(sample.shop);
+      setProducts(sample.products);
+      setSales(sample.sales);
+      setPurchases(sample.purchases);
+      setStockLogs(sample.stockLogs);
+      setDebts(sample.debts);
+      setExpenses(sample.expenses);
+      setDeliveries(sample.deliveries);
+      showToast(
+        lang === 'my'
+          ? 'Supabase Cloud ထဲသို့ နမူနာဒေတာများ ထည့်သွင်းပြီးပါပြီ။'
+          : 'Sample shop dataset seeded to Supabase Cloud.'
+      );
       return;
     }
 
@@ -1259,6 +1599,18 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return;
       }
 
+      if (user.provider === 'supabase') {
+        const nextShop: ShopSettings = { ...shop, ...sanitized, ownerId: activeShopId };
+        const res = await upsertSupabaseShop(activeShopId, nextShop);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase update failed', 'error');
+          return;
+        }
+        setShop(nextShop);
+        showToast(lang === 'my' ? 'ဆိုင်အချက်အလက် သိမ်းဆည်းပြီးပါပြီ။' : 'Shop settings saved.');
+        return;
+      }
+
       const path = `shops/${activeShopId}`;
       try {
         if (activeShopId === user.uid) {
@@ -1309,6 +1661,22 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return;
       }
 
+      if (user.provider === 'supabase') {
+        const nextProd: Product = { id, ownerId: uid, ...data };
+        const res = await upsertSupabaseProduct(uid, nextProd);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase save failed', 'error');
+          return;
+        }
+        setProducts((prev) =>
+          existingId
+            ? prev.map((p) => (p.id === existingId ? { ...p, ...data } : p))
+            : [nextProd, ...prev]
+        );
+        showToast(lang === 'my' ? 'ကုန်ပစ္စည်း သိမ်းဆည်းပြီးပါပြီ။' : 'Product saved.');
+        return;
+      }
+
       const path = `shops/${uid}/products/${id}`;
       try {
         await ensureShopDoc(uid, user.displayName);
@@ -1336,6 +1704,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteProduct = useCallback(
     async (id: string) => {
       if (!user) {
+        setProducts((prev) => prev.filter((p) => p.id !== id));
+        showToast(lang === 'my' ? 'ပစ္စည်းဖျက်ပြီးပါပြီ။' : 'Product deleted.', 'info');
+        return;
+      }
+      if (user.provider === 'supabase') {
+        const res = await deleteSupabaseProduct(id);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase delete failed', 'error');
+          return;
+        }
         setProducts((prev) => prev.filter((p) => p.id !== id));
         showToast(lang === 'my' ? 'ပစ္စည်းဖျက်ပြီးပါပြီ။' : 'Product deleted.', 'info');
         return;
@@ -1404,78 +1782,91 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ? Math.max(0, total - paidAmount)
           : 0;
 
-      if (!user) {
-        setSales((prev) => [newSale, ...prev]);
-        // Deduct stock + add logs
+      if (!user || user.provider === 'supabase') {
+        const updatedProds: Product[] = [];
         const newLogs: StockLog[] = [];
-        setProducts((prev) =>
-          prev.map((prod) => {
-            const matched = boundedItems.find((i) => i.productId === prod.id);
-            if (!matched) return prod;
-            const nextStock = prod.stock - matched.qty;
-            newLogs.push({
-              id: generateDocId('log'),
-              ownerId: uid,
-              productId: prod.id,
-              productName: prod.name,
-              type: 'out',
-              quantity: matched.qty,
-              previousStock: prod.stock,
-              newStock: nextStock,
-              reason: `Sale ${voucherNo}`,
-              date: today,
-            });
-            return { ...prod, stock: nextStock };
-          })
-        );
-        if (newLogs.length > 0) {
-          setStockLogs((prev) => [...newLogs, ...prev]);
-        }
+        products.forEach((prod) => {
+          const matched = boundedItems.find((i) => i.productId === prod.id);
+          if (!matched) return;
+          const nextStock = prod.stock - matched.qty;
+          updatedProds.push({ ...prod, stock: nextStock });
+          newLogs.push({
+            id: sanitizeId(generateDocId('log')),
+            ownerId: uid,
+            productId: prod.id,
+            productName: prod.name,
+            type: 'out',
+            quantity: matched.qty,
+            previousStock: prod.stock,
+            newStock: nextStock,
+            reason: `Sale ${voucherNo}`,
+            date: today,
+          });
+        });
 
+        let newDebt: Debt | null = null;
         if (remainingDebt > 0) {
           const due = new Date();
           due.setDate(due.getDate() + 14);
-          setDebts((prev) => [
-            {
-              id: generateDocId('debt'),
-              ownerId: uid,
-              type: 'receivable',
-              partyName: newSale.customerName || 'Credit Customer',
-              phone: newSale.customerPhone,
-              referenceNo: voucherNo,
-              totalAmount: total,
-              paidAmount: Math.min(paidAmount, total),
-              remainingAmount: remainingDebt,
-              dueDate: due.toISOString().slice(0, 10),
-              status: paidAmount > 0 ? 'partial' : 'pending',
-              note: `Auto-created from POS ${voucherNo}`,
-            },
-            ...prev,
+          newDebt = {
+            id: sanitizeId(generateDocId('debt')),
+            ownerId: uid,
+            type: 'receivable',
+            partyName: newSale.customerName || 'Credit Customer',
+            phone: newSale.customerPhone,
+            referenceNo: voucherNo,
+            totalAmount: total,
+            paidAmount: Math.min(paidAmount, total),
+            remainingAmount: remainingDebt,
+            dueDate: due.toISOString().slice(0, 10),
+            status: paidAmount > 0 ? 'partial' : 'pending',
+            note: `Auto-created from POS ${voucherNo}`,
+          };
+        }
+
+        let newDeliv: Delivery | null = null;
+        if (payload.createDelivery && payload.createDelivery.address.trim()) {
+          newDeliv = {
+            id: sanitizeId(generateDocId('deliv')),
+            ownerId: uid,
+            voucherNo,
+            date: today,
+            customerName: newSale.customerName || 'Customer',
+            phone: newSale.customerPhone,
+            address: clampString(payload.createDelivery.address, 240),
+            courierName: clampString(payload.createDelivery.courierName, 80, 'Shop Rider'),
+            deliveryFee: clampNumber(payload.createDelivery.deliveryFee, 0),
+            codAmount:
+              payload.paymentMethod === 'credit'
+                ? remainingDebt + clampNumber(payload.createDelivery.deliveryFee, 0)
+                : 0,
+            status: 'pending',
+            note: `POS order ${voucherNo}`,
+          };
+        }
+
+        if (user?.provider === 'supabase') {
+          const res = await upsertSupabaseSale(uid, newSale);
+          if (!res.ok) {
+            showToast(res.error || 'Supabase sale save failed', 'error');
+            return newSale;
+          }
+          await Promise.all([
+            ...updatedProds.map((p) => upsertSupabaseProduct(uid, p)),
+            ...newLogs.map((l) => upsertSupabaseStockLog(uid, l)),
+            ...(newDebt ? [upsertSupabaseDebt(uid, newDebt)] : []),
+            ...(newDeliv ? [upsertSupabaseDelivery(uid, newDeliv)] : []),
           ]);
         }
 
-        if (payload.createDelivery && payload.createDelivery.address.trim()) {
-          setDeliveries((prev) => [
-            {
-              id: generateDocId('deliv'),
-              ownerId: uid,
-              voucherNo,
-              date: today,
-              customerName: newSale.customerName || 'Customer',
-              phone: newSale.customerPhone,
-              address: clampString(payload.createDelivery!.address, 240),
-              courierName: clampString(payload.createDelivery!.courierName, 80, 'Shop Rider'),
-              deliveryFee: clampNumber(payload.createDelivery!.deliveryFee, 0),
-              codAmount:
-                payload.paymentMethod === 'credit'
-                  ? remainingDebt + clampNumber(payload.createDelivery!.deliveryFee, 0)
-                  : 0,
-              status: 'pending',
-              note: `POS order ${voucherNo}`,
-            },
-            ...prev,
-          ]);
+        setSales((prev) => [newSale, ...prev]);
+        if (updatedProds.length > 0) {
+          const map = new Map(updatedProds.map((p) => [p.id, p]));
+          setProducts((prev) => prev.map((p) => map.get(p.id) || p));
         }
+        if (newLogs.length > 0) setStockLogs((prev) => [...newLogs, ...prev]);
+        if (newDebt) setDebts((prev) => [newDebt!, ...prev]);
+        if (newDeliv) setDeliveries((prev) => [newDeliv!, ...prev]);
 
         showToast(
           lang === 'my' ? `ဘောင်ချာ ${voucherNo} အောင်မြင်စွာ ဖွင့်ပြီးပါပြီ။` : `Sale ${voucherNo} completed.`
@@ -1620,6 +2011,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'အရောင်းမှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Sale updated.');
         return;
       }
+      if (user.provider === 'supabase') {
+        const res = await upsertSupabaseSale(uid, { id, ownerId: uid, ...data });
+        if (!res.ok) {
+          showToast(res.error || 'Supabase update failed', 'error');
+          return;
+        }
+        setSales((prev) => prev.map((s) => (s.id === id ? { ...s, ...data } : s)));
+        showToast(lang === 'my' ? 'အရောင်းမှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Sale updated.');
+        return;
+      }
 
       const path = `shops/${uid}/sales/${id}`;
       try {
@@ -1638,6 +2039,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteSale = useCallback(
     async (id: string) => {
       if (!user) {
+        setSales((prev) => prev.filter((s) => s.id !== id));
+        showToast(lang === 'my' ? 'အရောင်းမှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Sale deleted.', 'info');
+        return;
+      }
+      if (user.provider === 'supabase') {
+        const res = await deleteSupabaseSale(id);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase delete failed', 'error');
+          return;
+        }
         setSales((prev) => prev.filter((s) => s.id !== id));
         showToast(lang === 'my' ? 'အရောင်းမှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Sale deleted.', 'info');
         return;
@@ -1688,53 +2099,70 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         note: clampString(payload.note, 240),
       };
 
-      if (!user) {
-        setPurchases((prev) => [newPurchase, ...prev]);
+      if (!user || user.provider === 'supabase') {
+        const updatedProds: Product[] = [];
         const newLogs: StockLog[] = [];
-        setProducts((prev) =>
-          prev.map((prod) => {
-            const matched = boundedItems.find((i) => i.productId === prod.id);
-            if (!matched) return prod;
-            const nextStock = prod.stock + matched.qty;
-            const nextCost = matched.costPrice;
-            const nextSell = Math.round(nextCost * (1 + prod.marginPercent / 100));
-            newLogs.push({
-              id: generateDocId('log'),
-              ownerId: uid,
-              productId: prod.id,
-              productName: prod.name,
-              type: 'in',
-              quantity: matched.qty,
-              previousStock: prod.stock,
-              newStock: nextStock,
-              reason: `Purchase ${refNo}`,
-              date,
-            });
-            return { ...prod, stock: nextStock, costPrice: nextCost, sellPrice: nextSell };
-          })
-        );
-        if (newLogs.length > 0) setStockLogs((prev) => [...newLogs, ...prev]);
+        products.forEach((prod) => {
+          const matched = boundedItems.find((i) => i.productId === prod.id);
+          if (!matched) return;
+          const nextStock = prod.stock + matched.qty;
+          const nextCost = matched.costPrice;
+          const nextSell = Math.round(nextCost * (1 + prod.marginPercent / 100));
+          updatedProds.push({ ...prod, stock: nextStock, costPrice: nextCost, sellPrice: nextSell });
+          newLogs.push({
+            id: sanitizeId(generateDocId('log')),
+            ownerId: uid,
+            productId: prod.id,
+            productName: prod.name,
+            type: 'in',
+            quantity: matched.qty,
+            previousStock: prod.stock,
+            newStock: nextStock,
+            reason: `Purchase ${refNo}`,
+            date,
+          });
+        });
+
+        let newDebt: Debt | null = null;
         if (remaining > 0) {
           const due = new Date();
           due.setDate(due.getDate() + 14);
-          setDebts((prev) => [
-            {
-              id: generateDocId('debt'),
-              ownerId: uid,
-              type: 'payable',
-              partyName: newPurchase.supplierName,
-              phone: '',
-              referenceNo: refNo,
-              totalAmount,
-              paidAmount,
-              remainingAmount: remaining,
-              dueDate: due.toISOString().slice(0, 10),
-              status: paidAmount > 0 ? 'partial' : 'pending',
-              note: `Supplier credit from ${refNo}`,
-            },
-            ...prev,
+          newDebt = {
+            id: sanitizeId(generateDocId('debt')),
+            ownerId: uid,
+            type: 'payable',
+            partyName: newPurchase.supplierName,
+            phone: '',
+            referenceNo: refNo,
+            totalAmount,
+            paidAmount,
+            remainingAmount: remaining,
+            dueDate: due.toISOString().slice(0, 10),
+            status: paidAmount > 0 ? 'partial' : 'pending',
+            note: `Supplier credit from ${refNo}`,
+          };
+        }
+
+        if (user?.provider === 'supabase') {
+          const res = await upsertSupabasePurchase(uid, newPurchase);
+          if (!res.ok) {
+            showToast(res.error || 'Supabase purchase save failed', 'error');
+            return;
+          }
+          await Promise.all([
+            ...updatedProds.map((p) => upsertSupabaseProduct(uid, p)),
+            ...newLogs.map((l) => upsertSupabaseStockLog(uid, l)),
+            ...(newDebt ? [upsertSupabaseDebt(uid, newDebt)] : []),
           ]);
         }
+
+        setPurchases((prev) => [newPurchase, ...prev]);
+        if (updatedProds.length > 0) {
+          const map = new Map(updatedProds.map((p) => [p.id, p]));
+          setProducts((prev) => prev.map((p) => map.get(p.id) || p));
+        }
+        if (newLogs.length > 0) setStockLogs((prev) => [...newLogs, ...prev]);
+        if (newDebt) setDebts((prev) => [newDebt!, ...prev]);
         showToast(lang === 'my' ? 'အဝယ်စာရင်းနှင့် Stock ပေါင်းထည့်ပြီးပါပြီ။' : 'Purchase recorded & restocked.');
         return;
       }
@@ -1843,6 +2271,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'အဝယ်မှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Purchase updated.');
         return;
       }
+      if (user.provider === 'supabase') {
+        const res = await upsertSupabasePurchase(uid, { id, ownerId: uid, ...data });
+        if (!res.ok) {
+          showToast(res.error || 'Supabase update failed', 'error');
+          return;
+        }
+        setPurchases((prev) => prev.map((p) => (p.id === id ? { ...p, ...data } : p)));
+        showToast(lang === 'my' ? 'အဝယ်မှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Purchase updated.');
+        return;
+      }
 
       const path = `shops/${uid}/purchases/${id}`;
       try {
@@ -1861,6 +2299,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deletePurchase = useCallback(
     async (id: string) => {
       if (!user) {
+        setPurchases((prev) => prev.filter((p) => p.id !== id));
+        showToast(lang === 'my' ? 'အဝယ်မှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Purchase deleted.', 'info');
+        return;
+      }
+      if (user.provider === 'supabase') {
+        const res = await deleteSupabasePurchase(id);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase delete failed', 'error');
+          return;
+        }
         setPurchases((prev) => prev.filter((p) => p.id !== id));
         showToast(lang === 'my' ? 'အဝယ်မှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Purchase deleted.', 'info');
         return;
@@ -1912,6 +2360,18 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
 
       if (!user) {
+        setProducts((prev) => prev.map((p) => (p.id === prod.id ? { ...p, stock: nextStock } : p)));
+        setStockLogs((prev) => [logEntry, ...prev]);
+        showToast(lang === 'my' ? 'ကုန်လက်ကျန် ပြင်ဆင်ပြီးပါပြီ။' : 'Stock updated.');
+        return;
+      }
+      if (user.provider === 'supabase') {
+        const resProd = await upsertSupabaseProduct(uid, { ...prod, stock: nextStock });
+        if (!resProd.ok) {
+          showToast(resProd.error || 'Supabase stock update failed', 'error');
+          return;
+        }
+        await upsertSupabaseStockLog(uid, logEntry);
         setProducts((prev) => prev.map((p) => (p.id === prod.id ? { ...p, stock: nextStock } : p)));
         setStockLogs((prev) => [logEntry, ...prev]);
         showToast(lang === 'my' ? 'ကုန်လက်ကျန် ပြင်ဆင်ပြီးပါပြီ။' : 'Stock updated.');
@@ -1969,6 +2429,22 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'Stock မှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Stock log updated.');
         return;
       }
+      if (user.provider === 'supabase') {
+        const existing = stockLogs.find((l) => l.id === id);
+        const res = await upsertSupabaseStockLog(uid, {
+          id,
+          ownerId: uid,
+          productId: existing?.productId || '',
+          ...data,
+        });
+        if (!res.ok) {
+          showToast(res.error || 'Supabase update failed', 'error');
+          return;
+        }
+        setStockLogs((prev) => prev.map((l) => (l.id === id ? { ...l, ...data } : l)));
+        showToast(lang === 'my' ? 'Stock မှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Stock log updated.');
+        return;
+      }
 
       const path = `shops/${uid}/stockLogs/${id}`;
       try {
@@ -1981,12 +2457,22 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(error, OperationType.UPDATE, path);
       }
     },
-    [user, activeShopId, lang, showToast]
+    [user, activeShopId, stockLogs, lang, showToast]
   );
 
   const deleteStockLog = useCallback(
     async (id: string) => {
       if (!user) {
+        setStockLogs((prev) => prev.filter((l) => l.id !== id));
+        showToast(lang === 'my' ? 'Stock မှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Stock log deleted.', 'info');
+        return;
+      }
+      if (user.provider === 'supabase') {
+        const res = await deleteSupabaseStockLog(id);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase delete failed', 'error');
+          return;
+        }
         setStockLogs((prev) => prev.filter((l) => l.id !== id));
         showToast(lang === 'my' ? 'Stock မှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Stock log deleted.', 'info');
         return;
@@ -2036,6 +2522,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
 
       if (!user) {
+        setDebts((prev) => [record, ...prev]);
+        showToast(lang === 'my' ? 'အကြွေးစာရင်း ထည့်သွင်းပြီးပါပြီ။' : 'Debt record added.');
+        return;
+      }
+      if (user.provider === 'supabase') {
+        const res = await upsertSupabaseDebt(uid, record);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase save failed', 'error');
+          return;
+        }
         setDebts((prev) => [record, ...prev]);
         showToast(lang === 'my' ? 'အကြွေးစာရင်း ထည့်သွင်းပြီးပါပြီ။' : 'Debt record added.');
         return;
@@ -2096,6 +2592,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'အကြွေးစာရင်း ပြင်ဆင်ပြီးပါပြီ။' : 'Debt record updated.');
         return;
       }
+      if (user.provider === 'supabase') {
+        const res = await upsertSupabaseDebt(uid, { id, ownerId: uid, ...data });
+        if (!res.ok) {
+          showToast(res.error || 'Supabase update failed', 'error');
+          return;
+        }
+        setDebts((prev) => prev.map((d) => (d.id === id ? { ...d, ...data } : d)));
+        showToast(lang === 'my' ? 'အကြွေးစာရင်း ပြင်ဆင်ပြီးပါပြီ။' : 'Debt record updated.');
+        return;
+      }
 
       const path = `shops/${uid}/debts/${id}`;
       try {
@@ -2139,6 +2645,22 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'အကြွေးဆပ်ငွေ မှတ်တမ်းတင်ပြီးပါပြီ။' : 'Payment recorded.');
         return;
       }
+      if (user.provider === 'supabase') {
+        const nextDebt: Debt = {
+          ...debt,
+          paidAmount: nextPaid,
+          remainingAmount: nextRemaining,
+          status: nextStatus,
+        };
+        const res = await upsertSupabaseDebt(activeShopId, nextDebt);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase update failed', 'error');
+          return;
+        }
+        setDebts((prev) => prev.map((d) => (d.id === debtId ? nextDebt : d)));
+        showToast(lang === 'my' ? 'အကြွေးဆပ်ငွေ မှတ်တမ်းတင်ပြီးပါပြီ။' : 'Payment recorded.');
+        return;
+      }
 
       const path = `shops/${activeShopId}/debts/${debtId}`;
       try {
@@ -2159,6 +2681,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteDebt = useCallback(
     async (id: string) => {
       if (!user) {
+        setDebts((prev) => prev.filter((d) => d.id !== id));
+        showToast(lang === 'my' ? 'အကြွေးမှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Debt record deleted.', 'info');
+        return;
+      }
+      if (user.provider === 'supabase') {
+        const res = await deleteSupabaseDebt(id);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase delete failed', 'error');
+          return;
+        }
         setDebts((prev) => prev.filter((d) => d.id !== id));
         showToast(lang === 'my' ? 'အကြွေးမှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Debt record deleted.', 'info');
         return;
@@ -2202,6 +2734,21 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'ကုန်ကျစရိတ် သိမ်းဆည်းပြီးပါပြီ။' : 'Expense saved.');
         return;
       }
+      if (user.provider === 'supabase') {
+        const nextExp: Expense = { id, ownerId: uid, ...data };
+        const res = await upsertSupabaseExpense(uid, nextExp);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase save failed', 'error');
+          return;
+        }
+        setExpenses((prev) =>
+          existingId
+            ? prev.map((e) => (e.id === existingId ? { ...e, ...data } : e))
+            : [nextExp, ...prev]
+        );
+        showToast(lang === 'my' ? 'ကုန်ကျစရိတ် သိမ်းဆည်းပြီးပါပြီ။' : 'Expense saved.');
+        return;
+      }
 
       const path = `shops/${uid}/expenses/${id}`;
       try {
@@ -2230,6 +2777,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteExpense = useCallback(
     async (id: string) => {
       if (!user) {
+        setExpenses((prev) => prev.filter((e) => e.id !== id));
+        showToast(lang === 'my' ? 'ကုန်ကျစရိတ် ဖျက်ပြီးပါပြီ။' : 'Expense deleted.', 'info');
+        return;
+      }
+      if (user.provider === 'supabase') {
+        const res = await deleteSupabaseExpense(id);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase delete failed', 'error');
+          return;
+        }
         setExpenses((prev) => prev.filter((e) => e.id !== id));
         showToast(lang === 'my' ? 'ကုန်ကျစရိတ် ဖျက်ပြီးပါပြီ။' : 'Expense deleted.', 'info');
         return;
@@ -2268,6 +2825,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
 
       if (!user) {
+        setDeliveries((prev) => [data, ...prev]);
+        showToast(lang === 'my' ? 'ပို့ဆောင်ရေးစာရင်း ထည့်သွင်းပြီးပါပြီ။' : 'Delivery order added.');
+        return;
+      }
+      if (user.provider === 'supabase') {
+        const res = await upsertSupabaseDelivery(uid, data);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase save failed', 'error');
+          return;
+        }
         setDeliveries((prev) => [data, ...prev]);
         showToast(lang === 'my' ? 'ပို့ဆောင်ရေးစာရင်း ထည့်သွင်းပြီးပါပြီ။' : 'Delivery order added.');
         return;
@@ -2314,6 +2881,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'ပို့ဆောင်မှုမှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Delivery updated.');
         return;
       }
+      if (user.provider === 'supabase') {
+        const res = await upsertSupabaseDelivery(uid, { id, ownerId: uid, ...data });
+        if (!res.ok) {
+          showToast(res.error || 'Supabase update failed', 'error');
+          return;
+        }
+        setDeliveries((prev) => prev.map((d) => (d.id === id ? { ...d, ...data } : d)));
+        showToast(lang === 'my' ? 'ပို့ဆောင်မှုမှတ်တမ်း ပြင်ဆင်ပြီးပါပြီ။' : 'Delivery updated.');
+        return;
+      }
 
       const path = `shops/${uid}/deliveries/${id}`;
       try {
@@ -2341,6 +2918,17 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(lang === 'my' ? 'ပို့ဆောင်မှုအခြေအနေ ပြောင်းလဲပြီးပါပြီ။' : 'Delivery status updated.');
         return;
       }
+      if (user.provider === 'supabase') {
+        const nextDeliv: Delivery = { ...existing, status };
+        const res = await upsertSupabaseDelivery(activeShopId, nextDeliv);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase update failed', 'error');
+          return;
+        }
+        setDeliveries((prev) => prev.map((d) => (d.id === deliveryId ? nextDeliv : d)));
+        showToast(lang === 'my' ? 'ပို့ဆောင်မှုအခြေအနေ ပြောင်းလဲပြီးပါပြီ။' : 'Delivery status updated.');
+        return;
+      }
 
       const path = `shops/${activeShopId}/deliveries/${deliveryId}`;
       try {
@@ -2359,6 +2947,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteDelivery = useCallback(
     async (id: string) => {
       if (!user) {
+        setDeliveries((prev) => prev.filter((d) => d.id !== id));
+        showToast(lang === 'my' ? 'ပို့ဆောင်မှုမှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Delivery deleted.', 'info');
+        return;
+      }
+      if (user.provider === 'supabase') {
+        const res = await deleteSupabaseDelivery(id);
+        if (!res.ok) {
+          showToast(res.error || 'Supabase delete failed', 'error');
+          return;
+        }
         setDeliveries((prev) => prev.filter((d) => d.id !== id));
         showToast(lang === 'my' ? 'ပို့ဆောင်မှုမှတ်တမ်း ဖျက်ပြီးပါပြီ။' : 'Delivery deleted.', 'info');
         return;
@@ -2442,6 +3040,45 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setExpenses((backup.expenses || []).map((e) => ({ ...e, ownerId: uid })));
         setDeliveries((backup.deliveries || []).map((d) => ({ ...d, ownerId: uid })));
         showToast(lang === 'my' ? 'Backup မှ ဒေတာများ ပြန်သွင်းပြီးပါပြီ။' : 'Backup restored locally.');
+        return;
+      }
+      if (user.provider === 'supabase') {
+        const nextShop: ShopSettings = { ...backup.shop, ownerId: uid, currency: 'MMK' };
+        const nextProducts = backup.products.map((p) => ({ ...p, ownerId: uid }));
+        const nextSales = (backup.sales || []).map((s) => ({ ...s, ownerId: uid }));
+        const nextPurchases = (backup.purchases || []).map((p) => ({ ...p, ownerId: uid }));
+        const nextLogs = (backup.stockLogs || []).map((l) => ({ ...l, ownerId: uid }));
+        const nextDebts = (backup.debts || []).map((d) => ({ ...d, ownerId: uid }));
+        const nextExpenses = (backup.expenses || []).map((e) => ({ ...e, ownerId: uid }));
+        const nextDeliveries = (backup.deliveries || []).map((d) => ({ ...d, ownerId: uid }));
+        const res = await pushPosDataDirectToSupabase({
+          ownerId: uid,
+          shop: nextShop,
+          products: nextProducts,
+          sales: nextSales,
+          purchases: nextPurchases,
+          stockLogs: nextLogs,
+          debts: nextDebts,
+          expenses: nextExpenses,
+          deliveries: nextDeliveries,
+        });
+        if (!res.ok) {
+          showToast(res.error || 'Supabase restore failed', 'error');
+          return;
+        }
+        setShop(nextShop);
+        setProducts(nextProducts);
+        setSales(nextSales);
+        setPurchases(nextPurchases);
+        setStockLogs(nextLogs);
+        setDebts(nextDebts);
+        setExpenses(nextExpenses);
+        setDeliveries(nextDeliveries);
+        showToast(
+          lang === 'my'
+            ? 'Backup ဖိုင်မှ Supabase Cloud သို့ ပြန်သွင်းပြီးပါပြီ။'
+            : 'Backup restored to Supabase Cloud.'
+        );
         return;
       }
 
@@ -2736,7 +3373,9 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const value: PosContextValue = {
     user,
     authReady,
+    supabaseAuthReady,
     signingIn,
+    authError,
     isAdmin,
     accessStatus,
     activeLicense,
@@ -2769,6 +3408,8 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     debts,
     expenses,
     deliveries,
+    loginWithSupabase,
+    registerWithSupabase,
     loginWithGoogle,
     logout,
     seedCloudWithSampleData,

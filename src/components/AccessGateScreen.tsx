@@ -9,10 +9,12 @@ import {
   Lock,
   LogIn,
   LogOut,
+  Mail,
   Moon,
   RefreshCw,
   ShieldCheck,
   Sun,
+  UserPlus,
 } from 'lucide-react';
 import { usePos } from '../context/PosContext';
 import {
@@ -29,16 +31,26 @@ export const AccessGateScreen: React.FC = () => {
     darkMode,
     toggleDarkMode,
     user,
+    supabaseAuthReady,
     signingIn,
+    authError,
     accessStatus,
     activeLicense,
     subscriptionExpiry,
     isSubscriptionExpired,
     refreshSubscriptionStatus,
+    loginWithSupabase,
+    registerWithSupabase,
     loginWithGoogle,
     logout,
     redeemAccessPass,
   } = usePos();
+
+  const [authTab, setAuthTab] = useState<'login' | 'register'>('login');
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [nameInput, setNameInput] = useState('');
+  const [authInfoMsg, setAuthInfoMsg] = useState<string | null>(null);
 
   const [passInput, setPassInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -46,6 +58,33 @@ export const AccessGateScreen: React.FC = () => {
   const [renewalInfoMsg, setRenewalInfoMsg] = useState<string | null>(null);
   const [copiedRequest, setCopiedRequest] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleSupabaseAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthInfoMsg(null);
+    const trimmedEmail = emailInput.trim();
+    if (!trimmedEmail || passwordInput.length < 6) {
+      setAuthInfoMsg(
+        lang === 'my'
+          ? 'Email မှန်ကန်စွာနှင့် Password အနည်းဆုံး ၆ လုံး ထည့်သွင်းပေးပါ။'
+          : 'Please enter a valid email and a password of at least 6 characters.'
+      );
+      return;
+    }
+    if (authTab === 'login') {
+      await loginWithSupabase(trimmedEmail, passwordInput);
+    } else {
+      const res = await registerWithSupabase(trimmedEmail, passwordInput, nameInput.trim());
+      if (res.ok && res.needsEmailConfirm) {
+        setAuthInfoMsg(
+          lang === 'my'
+            ? 'အကောင့်ဖွင့်ပြီးပါပြီ! သင့် Email Inbox မှ အတည်ပြုလင့်ခ်ကို နှိပ်ပြီး ဝင်ရောက်ပါ (သို့မဟုတ် Supabase Auth > Providers > Email တွင် Confirm email ကို ပိတ်ထားပါ)။'
+            : 'Account created! Confirm your email from your inbox or turn off "Confirm email" in Supabase Auth settings.'
+        );
+        setAuthTab('login');
+      }
+    }
+  };
 
   const effectiveExpiryMs = subscriptionExpiry ?? activeLicense?.expiresAtMs ?? 0;
   const expiredState = accessStatus === 'expired' || isSubscriptionExpired;
@@ -248,11 +287,138 @@ export const AccessGateScreen: React.FC = () => {
 
           {!user ? (
             <div className="space-y-4">
+              {supabaseAuthReady && (
+                <div className="space-y-3.5">
+                  <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-titanium-100 dark:bg-titanium-800">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthTab('login');
+                        setAuthInfoMsg(null);
+                      }}
+                      className={`py-2 text-xs font-semibold rounded-lg transition-colors ${
+                        authTab === 'login'
+                          ? 'bg-white dark:bg-titanium-900 text-burgundy-800 dark:text-burgundy-200 shadow-xs'
+                          : 'text-titanium-600 dark:text-titanium-400 hover:text-titanium-900 dark:hover:text-titanium-100'
+                      }`}
+                    >
+                      {lang === 'my' ? 'အကောင့်ဝင်မည် (Sign In)' : 'Sign In'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthTab('register');
+                        setAuthInfoMsg(null);
+                      }}
+                      className={`py-2 text-xs font-semibold rounded-lg transition-colors ${
+                        authTab === 'register'
+                          ? 'bg-white dark:bg-titanium-900 text-burgundy-800 dark:text-burgundy-200 shadow-xs'
+                          : 'text-titanium-600 dark:text-titanium-400 hover:text-titanium-900 dark:hover:text-titanium-100'
+                      }`}
+                    >
+                      {lang === 'my' ? 'အကောင့်သစ်ဖွင့်မည်' : 'Create Account'}
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSupabaseAuthSubmit} className="space-y-3">
+                    {authTab === 'register' && (
+                      <div>
+                        <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
+                          {lang === 'my' ? 'အမည် / ဆိုင်အမည်' : 'Name / Shop Name'}
+                        </label>
+                        <input
+                          type="text"
+                          value={nameInput}
+                          onChange={(e) => setNameInput(e.target.value)}
+                          placeholder={lang === 'my' ? 'ဥပမာ - ရွှေစင်ဆိုင်' : 'e.g. Golden Shop'}
+                          className="w-full px-3.5 py-2.5 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-xl focus:outline-none focus:border-burgundy-600"
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
+                        {lang === 'my' ? 'Email လိပ်စာ' : 'Email Address'}
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        autoComplete="email"
+                        value={emailInput}
+                        onChange={(e) => setEmailInput(e.target.value)}
+                        placeholder="you@gmail.com"
+                        className="w-full px-3.5 py-2.5 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-xl focus:outline-none focus:border-burgundy-600"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
+                        {lang === 'my' ? 'Password (အနည်းဆုံး ၆ လုံး)' : 'Password (min 6 chars)'}
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        minLength={6}
+                        autoComplete={authTab === 'login' ? 'current-password' : 'new-password'}
+                        value={passwordInput}
+                        onChange={(e) => setPasswordInput(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full px-3.5 py-2.5 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-xl focus:outline-none focus:border-burgundy-600"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={signingIn}
+                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-50 rounded-xl transition-colors"
+                    >
+                      {authTab === 'login' ? (
+                        <Mail className="w-4 h-4" />
+                      ) : (
+                        <UserPlus className="w-4 h-4" />
+                      )}
+                      {signingIn
+                        ? lang === 'my'
+                          ? 'ဝင်ရောက်နေသည်...'
+                          : 'Please wait...'
+                        : authTab === 'login'
+                        ? lang === 'my'
+                          ? 'Supabase Email ဖြင့် ဝင်မည်'
+                          : 'Sign In with Email'
+                        : lang === 'my'
+                        ? 'Supabase အကောင့်သစ် ဖွင့်မည်'
+                        : 'Create Free Account'}
+                    </button>
+                  </form>
+
+                  {authInfoMsg && (
+                    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 text-[11px] text-emerald-900 dark:text-emerald-200 leading-relaxed">
+                      {authInfoMsg}
+                    </div>
+                  )}
+
+                  <div className="relative py-1">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-titanium-200 dark:border-titanium-800" />
+                    </div>
+                    <div className="relative flex justify-center text-[11px]">
+                      <span className="px-2.5 bg-white dark:bg-titanium-900 text-titanium-400">
+                        {lang === 'my' ? 'သို့မဟုတ်' : 'or'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={loginWithGoogle}
                 disabled={signingIn}
-                className="w-full inline-flex items-center justify-center gap-2.5 px-4 py-3 text-sm font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-50 rounded-xl transition-colors"
+                className={`w-full inline-flex items-center justify-center gap-2.5 px-4 py-2.5 text-sm font-semibold disabled:opacity-50 rounded-xl transition-colors ${
+                  supabaseAuthReady
+                    ? 'text-titanium-800 dark:text-titanium-100 bg-titanium-100 hover:bg-titanium-200/80 dark:bg-titanium-800 dark:hover:bg-titanium-700 border border-titanium-200 dark:border-titanium-700'
+                    : 'py-3 text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500'
+                }`}
               >
                 <LogIn className="w-4 h-4" />
                 {signingIn
@@ -264,6 +430,13 @@ export const AccessGateScreen: React.FC = () => {
                   : 'Continue with Google (Gmail)'}
               </button>
 
+              {authError && (
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 flex items-start gap-2 text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
+                  <span>{authError}</span>
+                </div>
+              )}
+
               <div className="p-3.5 rounded-xl bg-titanium-50 dark:bg-titanium-950 border border-titanium-200/80 dark:border-titanium-800 text-[11px] text-titanium-600 dark:text-titanium-400 space-y-1.5 leading-relaxed">
                 <div className="font-semibold text-titanium-800 dark:text-titanium-200">
                   {lang === 'my' ? 'ဝင်ရောက်ပုံ အဆင့် ၂ ဆင့်' : '2-Step Secure Access'}
@@ -271,7 +444,11 @@ export const AccessGateScreen: React.FC = () => {
                 <div>
                   1.{' '}
                   {lang === 'my'
-                    ? 'သင့် Gmail ဖြင့် ဝင်ရောက်ပါ (Admin Account ဖြစ်ပါက Pass မလိုဘဲ Admin Panel ပါ တိုက်ရိုက်ပွင့်မည်)။'
+                    ? supabaseAuthReady
+                      ? 'သင့် Email + Password ဖြင့် ဝင်/ဖွင့်ပါ (VPN မလိုဘဲ PC/Safari အားလုံးတွင် ဝင်လို့ရပါသည်)။'
+                      : 'သင့် Gmail ဖြင့် ဝင်ရောက်ပါ (Admin Account ဖြစ်ပါက Pass မလိုဘဲ Admin Panel ပါ တိုက်ရိုက်ပွင့်မည်)။'
+                    : supabaseAuthReady
+                    ? 'Sign in or create an account with Email & Password (works on any PC/Safari without VPN).'
                     : 'Sign in with your Gmail account (Admin account unlocks full control automatically).'}
                 </div>
                 <div>

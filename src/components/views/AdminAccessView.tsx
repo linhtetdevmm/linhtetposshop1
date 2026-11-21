@@ -31,6 +31,13 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import {
+  createSupabaseAccessPass,
+  deleteSupabaseAccessPass,
+  fetchSupabaseAdminData,
+  updateSupabaseAccessPass,
+  updateSupabaseShopProfile,
+} from '../../lib/supabaseSync';
+import {
   formatExpiryDate,
   generateRandomPassCode,
   getRemainingDays,
@@ -108,10 +115,42 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
   const [editShopAddress, setEditShopAddress] = useState('');
   const [editShopMargin, setEditShopMargin] = useState('25');
 
-  // Real-time listeners for Admin only
+  const isSupabaseMode = user?.provider === 'supabase';
+
+  const reloadSupabaseAdmin = async () => {
+    const res = await fetchSupabaseAdminData();
+    if (res.error) {
+      showToast(res.error, 'error');
+    } else {
+      setPasses(res.passes);
+      setLicenses(res.licenses);
+      setShops(res.shops);
+    }
+    setLoading(false);
+  };
+
+  // Real-time listeners (Firebase) or live loader (Supabase) for Admin only
   useEffect(() => {
     if (!isAdmin || !user) return;
     setLoading(true);
+
+    if (user.provider === 'supabase') {
+      let active = true;
+      fetchSupabaseAdminData().then((res) => {
+        if (!active) return;
+        if (res.error) {
+          showToast(res.error, 'error');
+        } else {
+          setPasses(res.passes);
+          setLicenses(res.licenses);
+          setShops(res.shops);
+        }
+        setLoading(false);
+      });
+      return () => {
+        active = false;
+      };
+    }
 
     const u1 = onSnapshot(
       collection(db, 'accessPasses'),
@@ -191,7 +230,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
       u2();
       u3();
     };
-  }, [isAdmin, user]);
+  }, [isAdmin, user, showToast]);
 
   const nowMs = Date.now();
 
@@ -237,7 +276,9 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
       `Web Link: ${appUrl}`,
       `Access Pass: ${p.code}`,
       `Valid Until: ${expStr} (${p.maxDevices} Device${p.maxDevices > 1 ? 's' : ''})`,
-      `Google Account (Gmail) ဖြင့်ဝင်ပြီး အထက်ပါ Access Pass ကို ထည့်သွင်းအသုံးပြုနိုင်ပါသည်။`,
+      isSupabaseMode
+        ? `Email + Password ဖြင့် အကောင့်ဝင်/ဖွင့်ပြီး အထက်ပါ Access Pass ကို ထည့်သွင်းအသုံးပြုနိုင်ပါသည်။`
+        : `Google Account (Gmail) ဖြင့်ဝင်ပြီး အထက်ပါ Access Pass ကို ထည့်သွင်းအသုံးပြုနိုင်ပါသည်။`,
     ].join('\n');
   };
 
@@ -277,23 +318,40 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
       const safeNote = clampString(note, 240);
       const safeMaxDev = clampNumber(maxDevices, 1, 50);
 
-      const expiryTs = Timestamp.fromMillis(expiresMs);
-      await setDoc(doc(db, 'accessPasses', cleanCode), {
-        code: cleanCode,
-        label: safeLabel,
-        note: safeNote,
-        status: 'active',
-        durationDays: calcDays,
-        expiresAt: expiryTs,
-        subscription_expiry: expiryTs,
-        maxDevices: safeMaxDev,
-        boundDevices: [],
-        assignedUid: '',
-        assignedEmail: '',
-        createdBy: user.uid,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      if (isSupabaseMode) {
+        const res = await createSupabaseAccessPass({
+          code: cleanCode,
+          label: safeLabel,
+          note: safeNote,
+          durationDays: calcDays,
+          expiresAtMs: expiresMs,
+          maxDevices: safeMaxDev,
+          createdBy: user.uid,
+        });
+        if (!res.ok) {
+          showToast(res.error || 'Supabase error creating pass', 'error');
+          return;
+        }
+        await reloadSupabaseAdmin();
+      } else {
+        const expiryTs = Timestamp.fromMillis(expiresMs);
+        await setDoc(doc(db, 'accessPasses', cleanCode), {
+          code: cleanCode,
+          label: safeLabel,
+          note: safeNote,
+          status: 'active',
+          durationDays: calcDays,
+          expiresAt: expiryTs,
+          subscription_expiry: expiryTs,
+          maxDevices: safeMaxDev,
+          boundDevices: [],
+          assignedUid: '',
+          assignedEmail: '',
+          createdBy: user.uid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
 
       const created: AccessPass = {
         code: cleanCode,
@@ -318,7 +376,11 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
           : `Access Pass ${cleanCode} created.`
       );
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `accessPasses/${cleanCode}`);
+      if (isSupabaseMode) {
+        showToast(err instanceof Error ? err.message : 'Failed to create pass', 'error');
+      } else {
+        handleFirestoreError(err, OperationType.CREATE, `accessPasses/${cleanCode}`);
+      }
     } finally {
       setCreating(false);
     }
@@ -327,6 +389,31 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
   const handleExtendPass = async (p: AccessPass, addDays: number) => {
     const baseMs = Math.max(Date.now(), p.expiresAtMs || Date.now());
     const nextMs = baseMs + addDays * 24 * 60 * 60 * 1000;
+
+    if (isSupabaseMode) {
+      const linkedLic = p.assignedUid ? licenses.find((l) => l.userId === p.assignedUid) : undefined;
+      const res = await updateSupabaseAccessPass(
+        p.code,
+        {
+          status: 'active',
+          durationDays: clampNumber((p.durationDays || 30) + addDays, 1, 3650),
+          expiresAtMs: nextMs,
+        },
+        linkedLic ? { userId: p.assignedUid, status: 'active', expiresAtMs: nextMs } : undefined
+      );
+      if (!res.ok) {
+        showToast(res.error || 'Failed to extend pass', 'error');
+        return;
+      }
+      await reloadSupabaseAdmin();
+      showToast(
+        lang === 'my'
+          ? `${p.code} ကို +${addDays} ရက် သက်တမ်းတိုးပြီးပါပြီ။`
+          : `Extended ${p.code} by +${addDays} days.`
+      );
+      return;
+    }
+
     const nextTs = Timestamp.fromMillis(nextMs);
 
     try {
@@ -362,6 +449,31 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
 
   const handleToggleRevoke = async (p: AccessPass) => {
     const nextStatus = p.status === 'active' ? 'revoked' : 'active';
+    if (isSupabaseMode) {
+      const linkedLic = p.assignedUid ? licenses.find((l) => l.userId === p.assignedUid) : undefined;
+      const res = await updateSupabaseAccessPass(
+        p.code,
+        { status: nextStatus },
+        linkedLic ? { userId: p.assignedUid, status: nextStatus } : undefined
+      );
+      if (!res.ok) {
+        showToast(res.error || 'Failed to update status', 'error');
+        return;
+      }
+      await reloadSupabaseAdmin();
+      showToast(
+        nextStatus === 'revoked'
+          ? lang === 'my'
+            ? `${p.code} ကို ဝင်ခွင့်ပိတ်လိုက်ပါပြီ။`
+            : `Revoked ${p.code}.`
+          : lang === 'my'
+          ? `${p.code} ကို ပြန်လည်ဖွင့်ပေးပြီးပါပြီ။`
+          : `Re-activated ${p.code}.`,
+        nextStatus === 'revoked' ? 'info' : 'success'
+      );
+      return;
+    }
+
     try {
       const batch = writeBatch(db);
       batch.update(doc(db, 'accessPasses', p.code), {
@@ -394,6 +506,20 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
   };
 
   const handleResetDevices = async (p: AccessPass) => {
+    if (isSupabaseMode) {
+      const res = await updateSupabaseAccessPass(p.code, { boundDevices: [] });
+      if (!res.ok) {
+        showToast(res.error || 'Failed to reset devices', 'error');
+        return;
+      }
+      await reloadSupabaseAdmin();
+      showToast(
+        lang === 'my'
+          ? `${p.code} ၏ စက်ကန့်သတ်ချက်ကို Reset လုပ်ပြီးပါပြီ။`
+          : `Cleared bound devices for ${p.code}.`
+      );
+      return;
+    }
     try {
       await updateDoc(doc(db, 'accessPasses', p.code), {
         boundDevices: [],
@@ -410,6 +536,28 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
   };
 
   const handleUnassignUser = async (p: AccessPass) => {
+    if (isSupabaseMode) {
+      const linkedLic = p.assignedUid ? licenses.find((l) => l.userId === p.assignedUid) : undefined;
+      const res = await updateSupabaseAccessPass(
+        p.code,
+        { assignedUid: '', assignedEmail: '', boundDevices: [] },
+        linkedLic && linkedLic.passCode === p.code
+          ? { userId: p.assignedUid, status: 'revoked' }
+          : undefined
+      );
+      if (!res.ok) {
+        showToast(res.error || 'Failed to unassign user', 'error');
+        return;
+      }
+      await reloadSupabaseAdmin();
+      showToast(
+        lang === 'my'
+          ? `${p.code} မှ အကောင့်ချိတ်ဆက်မှုကို ဖြုတ်လိုက်ပါပြီ။`
+          : `Unassigned account from ${p.code}.`,
+        'info'
+      );
+      return;
+    }
     try {
       const batch = writeBatch(db);
       batch.update(doc(db, 'accessPasses', p.code), {
@@ -440,6 +588,19 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
   };
 
   const handleDeletePass = async (p: AccessPass) => {
+    if (isSupabaseMode) {
+      const res = await deleteSupabaseAccessPass(p.code, p.assignedUid || undefined);
+      if (!res.ok) {
+        showToast(res.error || 'Failed to delete pass', 'error');
+        return;
+      }
+      await reloadSupabaseAdmin();
+      showToast(
+        lang === 'my' ? `${p.code} ကို ဖျက်လိုက်ပါပြီ။` : `Deleted pass ${p.code}.`,
+        'info'
+      );
+      return;
+    }
     try {
       if (p.assignedUid) {
         const linkedLic = licenses.find((l) => l.userId === p.assignedUid);
@@ -473,10 +634,37 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
     if (!editingPass) return;
     const nextMs = new Date(`${editExpiryDate}T23:59:59`).getTime();
     if (!Number.isFinite(nextMs)) return;
-    const nextTs = Timestamp.fromMillis(nextMs);
     const nextMaxDev = clampNumber(Number(editMaxDevices), 1, 50);
     const nextLabel = clampString(editLabel, 120, editingPass.label);
     const nextNote = clampString(editNote, 240);
+
+    if (isSupabaseMode) {
+      const linkedLic = editingPass.assignedUid
+        ? licenses.find((l) => l.userId === editingPass.assignedUid)
+        : undefined;
+      const res = await updateSupabaseAccessPass(
+        editingPass.code,
+        { label: nextLabel, note: nextNote, expiresAtMs: nextMs, maxDevices: nextMaxDev },
+        linkedLic
+          ? {
+              userId: editingPass.assignedUid,
+              label: nextLabel,
+              expiresAtMs: nextMs,
+              maxDevices: nextMaxDev,
+            }
+          : undefined
+      );
+      if (!res.ok) {
+        showToast(res.error || 'Failed to update pass', 'error');
+        return;
+      }
+      setEditingPass(null);
+      await reloadSupabaseAdmin();
+      showToast(lang === 'my' ? 'Pass အချက်အလက် ပြင်ဆင်ပြီးပါပြီ။' : 'Access Pass updated.');
+      return;
+    }
+
+    const nextTs = Timestamp.fromMillis(nextMs);
 
     try {
       const batch = writeBatch(db);
@@ -520,6 +708,25 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
   const handleSaveEditShop = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingShop) return;
+    if (isSupabaseMode) {
+      const res = await updateSupabaseShopProfile(editingShop.id, {
+        shopName: clampString(editShopName, 120, editingShop.shopName),
+        shopSubtitle: clampString(editShopSubtitle, 160),
+        phone: clampString(editShopPhone, 40),
+        address: clampString(editShopAddress, 240),
+        defaultMarginPercent: clampNumber(Number(editShopMargin), 0, 1000),
+      });
+      if (!res.ok) {
+        showToast(res.error || 'Failed to update shop', 'error');
+        return;
+      }
+      setEditingShop(null);
+      await reloadSupabaseAdmin();
+      showToast(
+        lang === 'my' ? 'ဆိုင်အချက်အလက် ပြင်ဆင်ပြီးပါပြီ။' : 'Shop profile updated by Admin.'
+      );
+      return;
+    }
     try {
       await updateDoc(doc(db, 'shops', editingShop.id), {
         shopName: clampString(editShopName, 120, editingShop.shopName),
@@ -567,8 +774,20 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
             </p>
           </div>
         </div>
-        <div className="text-xs font-mono-num text-burgundy-800 dark:text-burgundy-300 bg-burgundy-50 dark:bg-burgundy-950/70 border border-burgundy-200 dark:border-burgundy-900 px-3 py-1.5 rounded-lg self-start sm:self-center">
-          Admin: {user?.email}
+        <div className="flex items-center gap-2 self-start sm:self-center">
+          {isSupabaseMode && (
+            <button
+              type="button"
+              onClick={reloadSupabaseAdmin}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-titanium-700 dark:text-titanium-200 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200 dark:hover:bg-titanium-700 rounded-lg transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              {lang === 'my' ? 'ပြန်စစ်မည်' : 'Refresh'}
+            </button>
+          )}
+          <div className="text-xs font-mono-num text-burgundy-800 dark:text-burgundy-300 bg-burgundy-50 dark:bg-burgundy-950/70 border border-burgundy-200 dark:border-burgundy-900 px-3 py-1.5 rounded-lg">
+            Admin ({isSupabaseMode ? 'Supabase' : 'Firebase'}): {user?.email}
+          </div>
         </div>
       </div>
 

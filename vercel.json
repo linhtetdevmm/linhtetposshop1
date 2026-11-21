@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/__/auth/:path*",
+      "destination": "https://spring-reference-27cvm.firebaseapp.com/__/auth/:path*"
+    },
+    {
+      "source": "/__/firebase/init.json",
+      "destination": "https://spring-reference-27cvm.firebaseapp.com/__/firebase/init.json"
+    },
+    {
+      "source": "/((?!api/|__/|assets/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
