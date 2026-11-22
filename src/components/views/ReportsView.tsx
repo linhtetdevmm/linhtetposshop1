@@ -133,10 +133,13 @@ export const ReportsView: React.FC = () => {
       t('voucherNo'),
       t('date'),
       t('customerName'),
+      t('customerPhone'),
       t('paymentMethod'),
+      t('itemCol'),
       `${t('subtotal')} (MMK)`,
       `${t('discount')} (MMK)`,
       `${t('grandTotal')} (MMK)`,
+      t('paidAmount'),
       `${t('cogs')} (MMK)`,
       `${t('profit')} (MMK)`,
     ];
@@ -144,23 +147,29 @@ export const ReportsView: React.FC = () => {
       s.voucherNo,
       s.date,
       s.customerName || 'Walk-in',
+      s.customerPhone || '',
       s.paymentMethod,
+      s.items.map((i) => `${i.name} x${i.qty}`).join(' | '),
       s.subtotal,
       s.discount,
       s.total,
+      s.paidAmount,
       s.totalCost,
       s.profit,
     ]);
-    exportToCsv(`Sales_Detail_${getTodayISO()}.csv`, headers, rows);
+    const cleanShop = shop.shopName.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 24) || 'Shop';
+    exportToCsv(`${cleanShop}_Sales_Accounting_${getTodayISO()}.csv`, headers, rows);
     showToast(
-      lang === 'my' ? 'အရောင်းအသေးစိတ် CSV ထုတ်ပြီးပါပြီ။' : 'Detailed Sales CSV exported.'
+      lang === 'my'
+        ? `အရောင်းစာရင်း (${sales.length} ခု) CSV ဖိုင် ဒေါင်းလုဒ်လုပ်ပြီးပါပြီ။`
+        : `Exported ${sales.length} sales records to CSV.`
     );
   };
 
   const chartData = useMemo(() => [...summaryRows].reverse(), [summaryRows]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex items-center gap-1 p-1 bg-titanium-200/70 dark:bg-titanium-800 rounded-lg">
@@ -318,6 +327,22 @@ export const ReportsView: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* One-Click Accounting 'Download CSV' Floating Action Button */}
+      <button
+        type="button"
+        onClick={handleExportSalesDetailCsv}
+        title={
+          lang === 'my'
+            ? 'စာရင်းကိုင်အတွက် အရောင်းဒေတာ CSV ဖိုင် ဒေါင်းလုဒ်လုပ်မည်'
+            : 'Download sales accounting CSV'
+        }
+        aria-label="Download CSV"
+        className="fixed bottom-6 right-6 z-40 inline-flex items-center gap-2 px-5 py-3.5 text-xs sm:text-sm font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-full shadow-lg hover:shadow-xl active:scale-95 transition-all"
+      >
+        <Download className="w-4 h-4 shrink-0" />
+        <span>Download CSV</span>
+      </button>
     </div>
   );
 };

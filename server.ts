@@ -116,19 +116,35 @@ async function startServer() {
     });
   });
 
-  // Telegram Bot Proxy Endpoint
+  // Telegram Bot Proxy Endpoint (supports per-shop user credentials with server env fallback)
   app.post('/api/telegram/send', async (req, res) => {
-    const { token, chatId } = getTelegramConfig();
+    const envCfg = getTelegramConfig();
+    const { message, botToken, chatId: reqChatId } = req.body as {
+      message?: string;
+      botToken?: string;
+      chatId?: string;
+    };
+
+    const userToken = typeof botToken === 'string' ? botToken.trim() : '';
+    const userChatId = typeof reqChatId === 'string' ? reqChatId.trim() : '';
+    const token = userToken || envCfg.token;
+    const chatId = userChatId || envCfg.chatId;
 
     if (!token || !chatId) {
       return res.status(400).json({
         ok: false,
         error:
-          'Telegram is not configured on the server. Please set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in your environment secrets.',
+          'Telegram Bot Token and Chat ID are required. Please configure your own Bot Token & Chat ID in Shop Profile.',
       });
     }
 
-    const { message } = req.body as { message?: string };
+    if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(token)) {
+      return res.status(400).json({ ok: false, error: 'Invalid Telegram Bot Token format.' });
+    }
+    if (!/^[-a-zA-Z0-9_@]{2,64}$/.test(chatId)) {
+      return res.status(400).json({ ok: false, error: 'Invalid Telegram Chat ID format.' });
+    }
+
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
       return res.status(400).json({ ok: false, error: 'Message text is required.' });
     }

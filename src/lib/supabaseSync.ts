@@ -396,6 +396,8 @@ export async function fetchSupabaseAdminData(): Promise<{
       currency: 'MMK',
       defaultMarginPercent: Number(r.default_margin_percent ?? 20),
       telegramEnabled: Boolean(r.telegram_enabled),
+      telegramBotToken: typeof r.telegram_bot_token === 'string' ? r.telegram_bot_token : '',
+      telegramChatId: typeof r.telegram_chat_id === 'string' ? r.telegram_chat_id : '',
     })),
   };
 }
@@ -551,7 +553,7 @@ export async function upsertSupabaseShop(
 ): Promise<{ ok: boolean; error?: string }> {
   const supabase = getClientSupabase();
   if (!supabase) return { ok: false, error: 'Supabase not configured.' };
-  const { error } = await supabase.from('pos_shops').upsert({
+  const baseRow = {
     owner_id: ownerId,
     shop_name: shop.shopName,
     shop_subtitle: shop.shopSubtitle || '',
@@ -562,7 +564,17 @@ export async function upsertSupabaseShop(
     default_margin_percent: Number(shop.defaultMarginPercent || 20),
     telegram_enabled: Boolean(shop.telegramEnabled),
     updated_at: new Date().toISOString(),
-  });
+  };
+  const withTg = {
+    ...baseRow,
+    telegram_bot_token: (shop.telegramBotToken || '').trim(),
+    telegram_chat_id: (shop.telegramChatId || '').trim(),
+  };
+  let { error } = await supabase.from('pos_shops').upsert(withTg);
+  if (error && /telegram_(bot_token|chat_id)|PGRST204/i.test(error.message)) {
+    const retry = await supabase.from('pos_shops').upsert(baseRow);
+    error = retry.error;
+  }
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
@@ -794,19 +806,8 @@ export async function pushPosDataDirectToSupabase(
 
   try {
     if (shop) {
-      const { error } = await supabase.from('pos_shops').upsert({
-        owner_id: ownerId,
-        shop_name: shop.shopName,
-        shop_subtitle: shop.shopSubtitle || '',
-        phone: shop.phone || '',
-        address: shop.address || '',
-        receipt_footer: shop.receiptFooter || '',
-        currency: shop.currency || 'MMK',
-        default_margin_percent: Number(shop.defaultMarginPercent || 20),
-        telegram_enabled: Boolean(shop.telegramEnabled),
-        updated_at: new Date().toISOString(),
-      });
-      if (error) throw new Error(`pos_shops: ${error.message}`);
+      const shopRes = await upsertSupabaseShop(ownerId, shop);
+      if (!shopRes.ok) throw new Error(`pos_shops: ${shopRes.error}`);
     }
 
     if (products.length > 0) {
@@ -1006,6 +1007,14 @@ export async function pullPosDataDirectFromSupabase(
             currency: 'MMK',
             defaultMarginPercent: Number(shopRes.data.default_margin_percent || 20),
             telegramEnabled: Boolean(shopRes.data.telegram_enabled),
+            telegramBotToken:
+              typeof shopRes.data.telegram_bot_token === 'string'
+                ? shopRes.data.telegram_bot_token
+                : '',
+            telegramChatId:
+              typeof shopRes.data.telegram_chat_id === 'string'
+                ? shopRes.data.telegram_chat_id
+                : '',
           }
         : (null as unknown as PosBackupPayload['shop']),
       products: (prodRes.data || []).map((r) => ({

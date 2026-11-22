@@ -50,6 +50,7 @@ function PosShell() {
     adminTargetShopLabel,
     adminSelectShop,
     isCloudMode,
+    supabaseAuthReady,
     loginWithGoogle,
     logout,
     toast,
@@ -254,7 +255,7 @@ function PosShell() {
                     <LogOut className="w-4 h-4" />
                   </button>
                 </div>
-              ) : (
+              ) : !supabaseAuthReady ? (
                 <button
                   type="button"
                   onClick={loginWithGoogle}
@@ -264,7 +265,7 @@ function PosShell() {
                   <LogIn className="w-3.5 h-3.5" />
                   {signingIn ? '...' : t('signInGoogle')}
                 </button>
-              )}
+              ) : null}
             </>
           ) : (
             <>
@@ -296,7 +297,7 @@ function PosShell() {
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
-              ) : (
+              ) : !supabaseAuthReady ? (
                 <button
                   type="button"
                   onClick={loginWithGoogle}
@@ -307,7 +308,7 @@ function PosShell() {
                 >
                   <LogIn className="w-4 h-4" />
                 </button>
-              )}
+              ) : null}
             </>
           )}
         </div>
@@ -370,13 +371,15 @@ function PosShell() {
                 </button>
               </div>
               {!user ? (
-                <button
-                  onClick={loginWithGoogle}
-                  disabled={signingIn}
-                  className="w-full py-2 text-xs font-semibold text-white bg-burgundy-700 dark:bg-burgundy-600 disabled:opacity-50 rounded-lg"
-                >
-                  {signingIn ? '...' : t('signInGoogle')}
-                </button>
+                !supabaseAuthReady && (
+                  <button
+                    onClick={loginWithGoogle}
+                    disabled={signingIn}
+                    className="w-full py-2 text-xs font-semibold text-white bg-burgundy-700 dark:bg-burgundy-600 disabled:opacity-50 rounded-lg"
+                  >
+                    {signingIn ? '...' : t('signInGoogle')}
+                  </button>
+                )
               ) : (
                 <button
                   onClick={logout}

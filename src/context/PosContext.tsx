@@ -56,7 +56,12 @@ import {
   type UserLicense,
 } from '../types/pos';
 import { createSeedDataset } from '../data/seedData';
-import { generateDocId, generateVoucherNo, getTodayISO } from '../lib/format';
+import {
+  buildTelegramReceiptMessage,
+  generateDocId,
+  generateVoucherNo,
+  getTodayISO,
+} from '../lib/format';
 import {
   getOrCreateDeviceId,
   getRemainingDays,
@@ -291,12 +296,51 @@ interface PosContextValue {
   // Backup, Restore, Telegram, Supabase
   exportBackupJson: () => void;
   restoreBackupJson: (backup: PosBackupPayload) => Promise<void>;
-  sendTelegramMessage: (message: string) => Promise<boolean>;
+  sendTelegramMessage: (
+    message: string,
+    options?: { botToken?: string; chatId?: string; quiet?: boolean }
+  ) => Promise<boolean>;
   pushToSupabase: () => Promise<boolean>;
   pullFromSupabase: () => Promise<boolean>;
 }
 
 const PosContext = createContext<PosContextValue | null>(null);
+
+interface StoredTelegramPrefs {
+  botToken: string;
+  chatId: string;
+  enabled?: boolean;
+}
+
+function loadShopTelegramPrefs(uid: string): StoredTelegramPrefs | null {
+  try {
+    const raw = localStorage.getItem(`shwepos_tg_${uid}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredTelegramPrefs>;
+    return {
+      botToken: typeof parsed.botToken === 'string' ? parsed.botToken.trim() : '',
+      chatId: typeof parsed.chatId === 'string' ? parsed.chatId.trim() : '',
+      enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveShopTelegramPrefs(uid: string, prefs: StoredTelegramPrefs) {
+  try {
+    localStorage.setItem(
+      `shwepos_tg_${uid}`,
+      JSON.stringify({
+        botToken: prefs.botToken.trim(),
+        chatId: prefs.chatId.trim(),
+        enabled: Boolean(prefs.enabled),
+      })
+    );
+  } catch {
+    // Ignore storage quota errors
+  }
+}
 
 function loadLocalData() {
   try {
@@ -1208,7 +1252,14 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             await upsertSupabaseShop(uid, shopData);
           }
           if (!active) return;
-          setShop(shopData);
+          const localTg = loadShopTelegramPrefs(uid);
+          const mergedShop: ShopSettings = {
+            ...shopData,
+            telegramBotToken: shopData.telegramBotToken?.trim() || localTg?.botToken || '',
+            telegramChatId: shopData.telegramChatId?.trim() || localTg?.chatId || '',
+            telegramEnabled: shopData.telegramEnabled || Boolean(localTg?.enabled && localTg?.botToken && localTg?.chatId),
+          };
+          setShop(mergedShop);
           setProducts((res.data.products || []).map((item) => ({ ...item, ownerId: uid })));
           setSales((res.data.sales || []).map((item) => ({ ...item, ownerId: uid })));
           setPurchases((res.data.purchases || []).map((item) => ({ ...item, ownerId: uid })));
@@ -1242,7 +1293,13 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             doc(db, 'shops', uid),
             (snap) => {
               if (snap.exists()) {
-                setShop(snap.data() as ShopSettings);
+                const remote = snap.data() as ShopSettings;
+                const localTg = loadShopTelegramPrefs(uid);
+                setShop({
+                  ...remote,
+                  telegramBotToken: remote.telegramBotToken?.trim() || localTg?.botToken || '',
+                  telegramChatId: remote.telegramChatId?.trim() || localTg?.chatId || '',
+                });
               }
               setLoadingData(false);
             },
@@ -1592,21 +1649,42 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ),
         telegramEnabled: Boolean(updates.telegramEnabled ?? shop.telegramEnabled),
       };
+      const telegramBotToken = clampString(
+        updates.telegramBotToken ?? shop.telegramBotToken ?? '',
+        160
+      );
+      const telegramChatId = clampString(
+        updates.telegramChatId ?? shop.telegramChatId ?? '',
+        64
+      );
+
+      saveShopTelegramPrefs(activeShopId, {
+        botToken: telegramBotToken,
+        chatId: telegramChatId,
+        enabled: sanitized.telegramEnabled,
+      });
+
+      const nextLocalShop: ShopSettings = {
+        ...shop,
+        ...sanitized,
+        telegramBotToken,
+        telegramChatId,
+        ownerId: activeShopId,
+      };
 
       if (!user) {
-        setShop((prev) => ({ ...prev, ...sanitized }));
+        setShop(nextLocalShop);
         showToast(lang === 'my' ? 'ဆိုင်အချက်အလက် သိမ်းဆည်းပြီးပါပြီ။' : 'Shop settings saved.');
         return;
       }
 
       if (user.provider === 'supabase') {
-        const nextShop: ShopSettings = { ...shop, ...sanitized, ownerId: activeShopId };
-        const res = await upsertSupabaseShop(activeShopId, nextShop);
+        const res = await upsertSupabaseShop(activeShopId, nextLocalShop);
         if (!res.ok) {
           showToast(res.error || 'Supabase update failed', 'error');
           return;
         }
-        setShop(nextShop);
+        setShop(nextLocalShop);
         showToast(lang === 'my' ? 'ဆိုင်အချက်အလက် သိမ်းဆည်းပြီးပါပြီ။' : 'Shop settings saved.');
         return;
       }
@@ -1620,6 +1698,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...sanitized,
           updatedAt: serverTimestamp(),
         });
+        setShop(nextLocalShop);
         showToast(lang === 'my' ? 'ဆိုင်အချက်အလက် သိမ်းဆည်းပြီးပါပြီ။' : 'Shop settings saved.');
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, path);
@@ -1727,6 +1806,113 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     },
     [user, activeShopId, lang, showToast]
+  );
+
+  const sendTelegramMessage = useCallback(
+    async (
+      message: string,
+      options?: { botToken?: string; chatId?: string; quiet?: boolean }
+    ): Promise<boolean> => {
+      const botToken = (options?.botToken ?? shop.telegramBotToken ?? '').trim();
+      const chatId = (options?.chatId ?? shop.telegramChatId ?? '').trim();
+      const quiet = Boolean(options?.quiet);
+
+      const sendDirectTelegram = async (): Promise<{ ok: boolean; error?: string }> => {
+        if (!botToken || !chatId) {
+          return {
+            ok: false,
+            error:
+              lang === 'my'
+                ? 'Telegram Bot Token နှင့် Chat ID ကို ဆိုင်အချက်အလက် (Settings) ထဲတွင် အရင်ထည့်သွင်းပေးပါ။'
+                : 'Please configure your Telegram Bot Token and Chat ID in Shop Profile.',
+          };
+        }
+        const directRes = await fetch(
+          `https://api.telegram.org/bot${encodeURIComponent(botToken)}/sendMessage`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: message.slice(0, 4000),
+              parse_mode: 'HTML',
+            }),
+          }
+        );
+        const directData = (await directRes.json()) as { ok?: boolean; description?: string };
+        if (!directRes.ok || !directData.ok) {
+          return { ok: false, error: directData.description || 'Telegram API error.' };
+        }
+        return { ok: true };
+      };
+
+      try {
+        const res = await fetch('/api/telegram/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message,
+            botToken: botToken || undefined,
+            chatId: chatId || undefined,
+          }),
+        });
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = (await res.json()) as { ok?: boolean; error?: string };
+          if (!res.ok || !data.ok) {
+            if (!quiet) {
+              showToast(
+                data.error ||
+                  (lang === 'my'
+                    ? 'Telegram Bot Token နှင့် Chat ID ကို ဆိုင်အချက်အလက်ထဲတွင် ထည့်သွင်းပေးပါ။'
+                    : 'Configure your Telegram Bot Token & Chat ID in Shop Profile.'),
+                'error'
+              );
+            }
+            return false;
+          }
+          if (!quiet) {
+            showToast(lang === 'my' ? 'Telegram သို့ ပေးပို့ပြီးပါပြီ။' : 'Sent to Telegram successfully.');
+          }
+          return true;
+        }
+
+        // Static web hosting (e.g. Vercel SPA without Express /api route)
+        const direct = await sendDirectTelegram();
+        if (!direct.ok) {
+          if (!quiet) {
+            showToast(direct.error || 'Telegram error', 'error');
+          }
+          return false;
+        }
+        if (!quiet) {
+          showToast(lang === 'my' ? 'Telegram သို့ ပေးပို့ပြီးပါပြီ။' : 'Sent to Telegram successfully.');
+        }
+        return true;
+      } catch {
+        // Retry direct Telegram API if local /api endpoint unreachable on static host
+        try {
+          if (botToken && chatId) {
+            const direct = await sendDirectTelegram();
+            if (direct.ok) {
+              if (!quiet) {
+                showToast(
+                  lang === 'my' ? 'Telegram သို့ ပေးပို့ပြီးပါပြီ။' : 'Sent to Telegram successfully.'
+                );
+              }
+              return true;
+            }
+          }
+        } catch {
+          // Fall through to error toast
+        }
+        if (!quiet) {
+          showToast(lang === 'my' ? 'Telegram ပေးပို့မှု မအောင်မြင်ပါ။' : 'Telegram network error.', 'error');
+        }
+        return false;
+      }
+    },
+    [shop.telegramBotToken, shop.telegramChatId, lang, showToast]
   );
 
   // ---------------------------------------------------------------------------
@@ -1868,6 +2054,13 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (newDebt) setDebts((prev) => [newDebt!, ...prev]);
         if (newDeliv) setDeliveries((prev) => [newDeliv!, ...prev]);
 
+        if (
+          shop.telegramEnabled &&
+          ((shop.telegramBotToken && shop.telegramChatId) || integrations.telegramConfigured)
+        ) {
+          void sendTelegramMessage(buildTelegramReceiptMessage(shop, newSale), { quiet: true });
+        }
+
         showToast(
           lang === 'my' ? `ဘောင်ချာ ${voucherNo} အောင်မြင်စွာ ဖွင့်ပြီးပါပြီ။` : `Sale ${voucherNo} completed.`
         );
@@ -1955,6 +2148,12 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         await batch.commit();
+        if (
+          shop.telegramEnabled &&
+          ((shop.telegramBotToken && shop.telegramChatId) || integrations.telegramConfigured)
+        ) {
+          void sendTelegramMessage(buildTelegramReceiptMessage(shop, newSale), { quiet: true });
+        }
         showToast(
           lang === 'my' ? `ဘောင်ချာ ${voucherNo} Cloud တွင် သိမ်းပြီးပါပြီ။` : `Sale ${voucherNo} saved to Cloud.`
         );
@@ -1963,7 +2162,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(error, OperationType.CREATE, path);
       }
     },
-    [user, activeShopId, products, ensureShopDoc, lang, showToast]
+    [user, activeShopId, products, shop, integrations.telegramConfigured, sendTelegramMessage, ensureShopDoc, lang, showToast]
   );
 
   const updateSale = useCallback(
@@ -3138,35 +3337,6 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ---------------------------------------------------------------------------
   // 10. Telegram & Supabase Server-Side Proxy Actions
   // ---------------------------------------------------------------------------
-  const sendTelegramMessage = useCallback(
-    async (message: string): Promise<boolean> => {
-      try {
-        const res = await fetch('/api/telegram/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message }),
-        });
-        const data = (await res.json()) as { ok?: boolean; error?: string };
-        if (!res.ok || !data.ok) {
-          showToast(
-            data.error ||
-              (lang === 'my'
-                ? 'Telegram Bot Token/Chat ID ကို Server Env တွင် ထည့်သွင်းပေးပါ။'
-                : 'Configure TELEGRAM_BOT_TOKEN & TELEGRAM_CHAT_ID in server secrets.'),
-            'error'
-          );
-          return false;
-        }
-        showToast(lang === 'my' ? 'Telegram သို့ ပေးပို့ပြီးပါပြီ။' : 'Sent to Telegram successfully.');
-        return true;
-      } catch {
-        showToast(lang === 'my' ? 'Telegram ပေးပို့မှု မအောင်မြင်ပါ။' : 'Telegram network error.', 'error');
-        return false;
-      }
-    },
-    [lang, showToast]
-  );
-
   const pushToSupabase = useCallback(async (): Promise<boolean> => {
     const ownerId = activeShopId;
     const payload = {

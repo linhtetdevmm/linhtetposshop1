@@ -13,8 +13,12 @@ CREATE TABLE IF NOT EXISTS pos_shops (
   currency TEXT DEFAULT 'MMK',
   default_margin_percent NUMERIC DEFAULT 20,
   telegram_enabled BOOLEAN DEFAULT FALSE,
+  telegram_bot_token TEXT DEFAULT '',
+  telegram_chat_id TEXT DEFAULT '',
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE pos_shops ADD COLUMN IF NOT EXISTS telegram_bot_token TEXT DEFAULT '';
+ALTER TABLE pos_shops ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS pos_products (
   id TEXT PRIMARY KEY,

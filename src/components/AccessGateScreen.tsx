@@ -273,15 +273,19 @@ export const AccessGateScreen: React.FC = () => {
             <p className="text-xs text-titanium-600 dark:text-titanium-400 leading-relaxed">
               {!user
                 ? lang === 'my'
-                  ? 'Link ရှိရုံဖြင့် ဝင်ရောက်၍ မရပါ။ သင့်ကိုယ်ပိုင် Gmail ဖြင့်ဝင်ပြီး Admin ပေးထားသော Random Pass ဖြင့် သတ်မှတ်သက်တမ်းအတွင်း အသုံးပြုနိုင်ပါသည်။'
+                  ? supabaseAuthReady
+                    ? 'Link ရှိရုံဖြင့် ဝင်ရောက်၍ မရပါ။ သင့် Email အကောင့်ဖြင့်ဝင်ပြီး Admin ပေးထားသော Random Pass ဖြင့် သတ်မှတ်သက်တမ်းအတွင်း အသုံးပြုနိုင်ပါသည်။'
+                    : 'Link ရှိရုံဖြင့် ဝင်ရောက်၍ မရပါ။ သင့်ကိုယ်ပိုင် Gmail ဖြင့်ဝင်ပြီး Admin ပေးထားသော Random Pass ဖြင့် သတ်မှတ်သက်တမ်းအတွင်း အသုံးပြုနိုင်ပါသည်။'
+                  : supabaseAuthReady
+                  ? 'This workspace is protected. Sign in with your Email account and activate with an Admin-issued Access Pass.'
                   : 'This workspace is protected. Sign in with your Google Account and activate with an Admin-issued Access Pass.'
                 : expiredState
                 ? lang === 'my'
                   ? 'သင့် POS လိုင်စင်သက်တမ်း ကုန်ဆုံးသွားပါပြီ။ သင့်ဆိုင်၏ အရောင်းနှင့် စတော့ဒေတာအားလုံးကို လုံခြုံစွာ သိမ်းဆည်းထားပေးပြီး သက်တမ်းတိုးပြီးသည်နှင့် ချက်ချင်းပြန်လည်အသုံးပြုနိုင်ပါမည်။'
                   : 'Your POS subscription has ended. All of your shop records, inventory, and sales remain safely saved and will unlock as soon as you renew.'
                 : lang === 'my'
-                ? 'သင့် Gmail အတွက် သီးသန့် POS ဒေတာသိမ်းဆည်းပေးမည်ဖြစ်ပြီး Admin သတ်မှတ်ထားသော သက်တမ်းအတွင်းသာ ဝင်ခွင့်ရှိပါမည်။'
-                : 'Your POS data is strictly isolated to your Gmail account and active for your Admin-assigned pass duration.'}
+                ? 'သင့်အကောင့်အတွက် သီးသန့် POS ဒေတာသိမ်းဆည်းပေးမည်ဖြစ်ပြီး Admin သတ်မှတ်ထားသော သက်တမ်းအတွင်းသာ ဝင်ခွင့်ရှိပါမည်။'
+                : 'Your POS data is strictly isolated to your account and active for your Admin-assigned pass duration.'}
             </p>
           </div>
 
@@ -396,39 +400,26 @@ export const AccessGateScreen: React.FC = () => {
                       {authInfoMsg}
                     </div>
                   )}
-
-                  <div className="relative py-1">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-titanium-200 dark:border-titanium-800" />
-                    </div>
-                    <div className="relative flex justify-center text-[11px]">
-                      <span className="px-2.5 bg-white dark:bg-titanium-900 text-titanium-400">
-                        {lang === 'my' ? 'သို့မဟုတ်' : 'or'}
-                      </span>
-                    </div>
-                  </div>
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={loginWithGoogle}
-                disabled={signingIn}
-                className={`w-full inline-flex items-center justify-center gap-2.5 px-4 py-2.5 text-sm font-semibold disabled:opacity-50 rounded-xl transition-colors ${
-                  supabaseAuthReady
-                    ? 'text-titanium-800 dark:text-titanium-100 bg-titanium-100 hover:bg-titanium-200/80 dark:bg-titanium-800 dark:hover:bg-titanium-700 border border-titanium-200 dark:border-titanium-700'
-                    : 'py-3 text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500'
-                }`}
-              >
-                <LogIn className="w-4 h-4" />
-                {signingIn
-                  ? lang === 'my'
-                    ? 'ဝင်ရောက်နေသည်...'
-                    : 'Signing in...'
-                  : lang === 'my'
-                  ? 'Google Account (Gmail) ဖြင့် ဝင်မည်'
-                  : 'Continue with Google (Gmail)'}
-              </button>
+              {!supabaseAuthReady && (
+                <button
+                  type="button"
+                  onClick={loginWithGoogle}
+                  disabled={signingIn}
+                  className="w-full inline-flex items-center justify-center gap-2.5 px-4 py-3 text-sm font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-50 rounded-xl transition-colors"
+                >
+                  <LogIn className="w-4 h-4" />
+                  {signingIn
+                    ? lang === 'my'
+                      ? 'ဝင်ရောက်နေသည်...'
+                      : 'Signing in...'
+                    : lang === 'my'
+                    ? 'Google Account (Gmail) ဖြင့် ဝင်မည်'
+                    : 'Continue with Google (Gmail)'}
+                </button>
+              )}
 
               {authError && (
                 <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/70 flex items-start gap-2 text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed">
@@ -465,7 +456,7 @@ export const AccessGateScreen: React.FC = () => {
               <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-800">
                 <div className="min-w-0">
                   <div className="text-[11px] text-titanium-500 dark:text-titanium-400">
-                    {lang === 'my' ? 'ဝင်ရောက်ထားသော Gmail' : 'Signed in as'}
+                    {lang === 'my' ? 'ဝင်ရောက်ထားသော အကောင့်' : 'Signed in as'}
                   </div>
                   <div className="text-xs font-semibold text-titanium-900 dark:text-titanium-50 truncate">
                     {user.email}

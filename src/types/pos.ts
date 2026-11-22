@@ -72,6 +72,8 @@ export interface ShopSettings {
   currency: 'MMK';
   defaultMarginPercent: number;
   telegramEnabled: boolean;
+  telegramBotToken?: string;
+  telegramChatId?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
 }

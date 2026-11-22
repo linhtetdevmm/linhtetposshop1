@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  CheckCircle2,
   Cloud,
   Copy,
   Database,
   Download,
+  Eye,
+  EyeOff,
   FileCode2,
   RefreshCw,
   Save,
@@ -28,6 +31,7 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
     lang,
     user,
     isAdmin,
+    supabaseAuthReady,
     signingIn,
     isCloudMode,
     integrations,
@@ -61,6 +65,11 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
   const [defaultMarginPercent, setDefaultMarginPercent] = useState(
     String(shop.defaultMarginPercent)
   );
+  const [tgBotToken, setTgBotToken] = useState(shop.telegramBotToken || '');
+  const [tgChatId, setTgChatId] = useState(shop.telegramChatId || '');
+  const [tgEnabled, setTgEnabled] = useState(Boolean(shop.telegramEnabled));
+  const [showTgToken, setShowTgToken] = useState(false);
+
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -71,6 +80,9 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
     setAddress(shop.address);
     setReceiptFooter(shop.receiptFooter);
     setDefaultMarginPercent(String(shop.defaultMarginPercent));
+    setTgBotToken(shop.telegramBotToken || '');
+    setTgChatId(shop.telegramChatId || '');
+    setTgEnabled(Boolean(shop.telegramEnabled));
   }, [shop]);
 
   const handleSaveShop = async (e: React.FormEvent) => {
@@ -109,6 +121,60 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
     }
   };
 
+  const hasPersonalTelegram = Boolean(tgBotToken.trim() && tgChatId.trim());
+  const isTelegramReady = hasPersonalTelegram || integrations.telegramConfigured;
+
+  const handleSaveTelegram = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanedToken = tgBotToken.trim();
+    const cleanedChatId = tgChatId.trim();
+    if ((cleanedToken && !cleanedChatId) || (!cleanedToken && cleanedChatId)) {
+      showToast(
+        lang === 'my'
+          ? 'Bot Token နှင့် Chat ID နှစ်ခုလုံးကို ပြည့်စုံစွာ ထည့်သွင်းပေးပါ။'
+          : 'Please enter both Bot Token and Chat ID.',
+        'error'
+      );
+      return;
+    }
+    setBusyAction('saveTelegram');
+    try {
+      await updateShopSettings({
+        telegramBotToken: cleanedToken,
+        telegramChatId: cleanedChatId,
+        telegramEnabled: tgEnabled,
+      });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const handleTestTelegram = async () => {
+    setBusyAction('testTelegram');
+    try {
+      const ok = await sendTelegramMessage(
+        `<b>${shopName || shop.shopName}</b>\n✅ ${
+          lang === 'my'
+            ? 'Telegram Bot ချိတ်ဆက်မှု စမ်းသပ်ချက် အောင်မြင်ပါသည်။'
+            : 'Telegram Bot test message delivered successfully!'
+        }`,
+        {
+          botToken: tgBotToken.trim() || undefined,
+          chatId: tgChatId.trim() || undefined,
+        }
+      );
+      if (ok && tgBotToken.trim() && tgChatId.trim()) {
+        await updateShopSettings({
+          telegramBotToken: tgBotToken.trim(),
+          telegramChatId: tgChatId.trim(),
+          telegramEnabled: tgEnabled,
+        });
+      }
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   const handleSendDailyTelegram = async () => {
     setBusyAction('telegram');
     const today = getTodayISO();
@@ -130,7 +196,10 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
       `Low Stock Alerts: ${lowStock} items`,
     ].join('\n');
 
-    await sendTelegramMessage(msg);
+    await sendTelegramMessage(msg, {
+      botToken: tgBotToken.trim() || undefined,
+      chatId: tgChatId.trim() || undefined,
+    });
     setBusyAction(null);
   };
 
@@ -189,108 +258,272 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
         </div>
       )}
 
-      {/* TAB 1: Editable Shop Profile */}
+      {/* TAB 1: Editable Shop Profile & Self-Service Telegram Integration */}
       {activeTab === 'profile' && (
-        <form
-          onSubmit={handleSaveShop}
-          className="max-w-2xl bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4"
-        >
-          <div>
-            <h3 className="text-base font-semibold text-titanium-900 dark:text-titanium-50">
-              {t('shopProfileTab')}
-            </h3>
-            <p className="text-xs text-titanium-500 dark:text-titanium-400 mt-0.5">
-              {lang === 'my'
-                ? 'ဆိုင်အမည်နှင့် အချက်အလက်များကို ပြောင်းလဲလိုက်လျှင် Dashboard နှင့် PNG/PDF ဘောင်ချာများအားလုံးတွင် ချက်ချင်းပြောင်းလဲသွားပါမည်။'
-                : 'Changes to your shop name and details update the workspace header and all PNG/PDF vouchers immediately.'}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
-                {t('shopName')}
-              </label>
-              <input
-                required
-                value={shopName}
-                onChange={(e) => setShopName(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-              />
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
-                {t('shopSubtitle')}
-              </label>
-              <input
-                value={shopSubtitle}
-                onChange={(e) => setShopSubtitle(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-              />
-            </div>
-
+        <div className="space-y-6 max-w-2xl">
+          <form
+            onSubmit={handleSaveShop}
+            className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4"
+          >
             <div>
-              <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
-                {t('shopPhone')}
-              </label>
-              <input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-              />
+              <h3 className="text-base font-semibold text-titanium-900 dark:text-titanium-50">
+                {t('shopProfileTab')}
+              </h3>
+              <p className="text-xs text-titanium-500 dark:text-titanium-400 mt-0.5">
+                {lang === 'my'
+                  ? 'ဆိုင်အမည်နှင့် အချက်အလက်များကို ပြောင်းလဲလိုက်လျှင် Dashboard နှင့် PNG/PDF ဘောင်ချာများအားလုံးတွင် ချက်ချင်းပြောင်းလဲသွားပါမည်။'
+                  : 'Changes to your shop name and details update the workspace header and all PNG/PDF vouchers immediately.'}
+              </p>
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
-                {t('defaultMargin')}
-              </label>
-              <input
-                type="number"
-                min={0}
-                max={1000}
-                step="0.5"
-                value={defaultMarginPercent}
-                onChange={(e) => setDefaultMarginPercent(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
+                  {t('shopName')}
+                </label>
+                <input
+                  required
+                  value={shopName}
+                  onChange={(e) => setShopName(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
+                  {t('shopSubtitle')}
+                </label>
+                <input
+                  value={shopSubtitle}
+                  onChange={(e) => setShopSubtitle(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
+                  {t('shopPhone')}
+                </label>
+                <input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
+                  {t('defaultMargin')}
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={1000}
+                  step="0.5"
+                  value={defaultMarginPercent}
+                  onChange={(e) => setDefaultMarginPercent(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
+                  {t('shopAddress')}
+                </label>
+                <input
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
+                  {t('receiptFooter')}
+                </label>
+                <textarea
+                  rows={2}
+                  value={receiptFooter}
+                  onChange={(e) => setReceiptFooter(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                />
+              </div>
             </div>
 
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
-                {t('shopAddress')}
-              </label>
-              <input
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-              />
+            <div className="pt-2 flex justify-end">
+              <button
+                type="submit"
+                disabled={busyAction === 'saveShop'}
+                className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors"
+              >
+                <Save className="w-4 h-4" />
+                {t('saveSettings')}
+              </button>
+            </div>
+          </form>
+
+          {/* Self-Service Telegram Integration Card (Available for Every User) */}
+          <form
+            onSubmit={handleSaveTelegram}
+            className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-burgundy-50 dark:bg-burgundy-950 border border-burgundy-200/80 dark:border-burgundy-800/70 flex items-center justify-center">
+                  <Send className="w-4 h-4 text-burgundy-700 dark:text-burgundy-300" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-titanium-900 dark:text-titanium-50">
+                    {lang === 'my'
+                      ? 'Telegram Bot ချိတ်ဆက်မှု (ကိုယ်တိုင်ချိတ်ဆက်ရန်)'
+                      : 'Telegram Bot Integration'}
+                  </h3>
+                  <p className="text-[11px] text-titanium-500 dark:text-titanium-400">
+                    {lang === 'my'
+                      ? 'မိမိကိုယ်ပိုင် Bot Token နှင့် Chat ID ထည့်၍ ဘောင်ချာနှင့် နေ့စဉ်အရောင်းချုပ်များကို Telegram သို့ တိုက်ရိုက်ပို့နိုင်ပါသည်'
+                      : 'Connect your own Telegram Bot Token & Chat ID to receive sales vouchers and daily summaries.'}
+                  </p>
+                </div>
+              </div>
+              <span
+                className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-md border ${
+                  isTelegramReady
+                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                    : 'bg-titanium-100 dark:bg-titanium-800 text-titanium-600 dark:text-titanium-400 border-titanium-200 dark:border-titanium-700'
+                }`}
+              >
+                {isTelegramReady && <CheckCircle2 className="w-3.5 h-3.5" />}
+                {isTelegramReady
+                  ? lang === 'my'
+                    ? 'ချိတ်ဆက်ပြီး'
+                    : 'Connected'
+                  : lang === 'my'
+                  ? 'မချိတ်ရသေး'
+                  : 'Not Connected'}
+              </span>
             </div>
 
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
-                {t('receiptFooter')}
-              </label>
-              <textarea
-                rows={2}
-                value={receiptFooter}
-                onChange={(e) => setReceiptFooter(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-              />
-            </div>
-          </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
+                  Telegram Bot Token
+                </label>
+                <div className="relative">
+                  <input
+                    type={showTgToken ? 'text' : 'password'}
+                    autoComplete="off"
+                    value={tgBotToken}
+                    onChange={(e) => setTgBotToken(e.target.value)}
+                    placeholder="1234567890:AAHxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    className="w-full pl-3.5 pr-10 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowTgToken((v) => !v)}
+                    aria-label={showTgToken ? 'Hide Bot Token' : 'Show Bot Token'}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-titanium-500 hover:text-titanium-800 dark:hover:text-titanium-200"
+                  >
+                    {showTgToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
 
-          <div className="pt-2 flex justify-end">
-            <button
-              type="submit"
-              disabled={busyAction === 'saveShop'}
-              className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors"
-            >
-              <Save className="w-4 h-4" />
-              {t('saveSettings')}
-            </button>
-          </div>
-        </form>
+              <div>
+                <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
+                  Telegram Chat ID
+                </label>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={tgChatId}
+                  onChange={(e) => setTgChatId(e.target.value)}
+                  placeholder="123456789 or -1001234567890"
+                  className="w-full px-3.5 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <label className="w-full flex items-center gap-2.5 px-3.5 py-2 bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={tgEnabled}
+                    onChange={(e) => setTgEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded accent-burgundy-700"
+                  />
+                  <span className="text-xs font-medium text-titanium-700 dark:text-titanium-200">
+                    {lang === 'my'
+                      ? 'ဘောင်ချာဖွင့်တိုင်း အလိုအလျောက်ပို့မည်'
+                      : 'Auto-send on every new sale'}
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleTestTelegram}
+                  disabled={busyAction !== null}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-burgundy-800 dark:text-burgundy-200 bg-burgundy-50 dark:bg-burgundy-950/60 hover:bg-burgundy-100/80 dark:hover:bg-burgundy-900/60 border border-burgundy-200 dark:border-burgundy-800 disabled:opacity-50 rounded-lg transition-colors"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {busyAction === 'testTelegram'
+                    ? '...'
+                    : lang === 'my'
+                    ? 'စမ်းသပ်မက်ဆေ့ချ် ပို့မည်'
+                    : 'Send Test Message'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSendDailyTelegram}
+                  disabled={busyAction !== null}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-titanium-700 dark:text-titanium-200 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200 dark:hover:bg-titanium-700 disabled:opacity-50 rounded-lg transition-colors"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {busyAction === 'telegram' ? '...' : t('sendDailyTelegram')}
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                disabled={busyAction !== null}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-50 rounded-lg transition-colors"
+              >
+                <Save className="w-3.5 h-3.5" />
+                {busyAction === 'saveTelegram'
+                  ? '...'
+                  : lang === 'my'
+                  ? 'Telegram ချိတ်ဆက်မှု သိမ်းမည်'
+                  : 'Save Telegram Settings'}
+              </button>
+            </div>
+
+            <div className="p-3 rounded-lg bg-titanium-50 dark:bg-titanium-950 border border-titanium-200/80 dark:border-titanium-800 text-[11px] text-titanium-600 dark:text-titanium-400 space-y-1 leading-relaxed">
+              <div className="font-semibold text-titanium-800 dark:text-titanium-200">
+                {lang === 'my' ? 'ချိတ်ဆက်ပုံ အဆင့် ၃ ဆင့်' : 'Quick Setup Guide (3 Steps)'}
+              </div>
+              <div>
+                1.{' '}
+                {lang === 'my'
+                  ? 'Telegram တွင် @BotFather ကိုရှာပြီး /newbot ဖြင့် Bot အသစ်ဖန်တီးကာ Bot Token ကို ကူးယူပါ။'
+                  : 'Open @BotFather on Telegram, run /newbot, and copy your Bot Token.'}
+              </div>
+              <div>
+                2.{' '}
+                {lang === 'my'
+                  ? 'မိမိဖန်တီးထားသော Bot ထဲသို့ ဝင်ပြီး Start (/start) တစ်ချက်နှိပ်ပေးပါ (အရေးကြီးသည်)။'
+                  : 'Open your newly created bot and tap Start (/start) once so it can message you.'}
+              </div>
+              <div>
+                3.{' '}
+                {lang === 'my'
+                  ? '@userinfobot ထံမှ မိမိ၏ Chat ID နံပါတ်ကို ယူ၍ အထက်တွင် ထည့်သွင်းပြီး "စမ်းသပ်မက်ဆေ့ချ် ပို့မည်" ကို နှိပ်စစ်ဆေးပါ။'
+                  : 'Get your numeric Chat ID from @userinfobot, paste it above, and tap "Send Test Message".'}
+              </div>
+            </div>
+          </form>
+        </div>
       )}
 
       {/* TAB 2: Cloud Databases (Firebase + Supabase), Telegram & Backup/Restore (Admin only) */}
@@ -322,13 +555,15 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
             </div>
             <div className="flex flex-wrap gap-2 pt-1">
               {!user ? (
-                <button
-                  onClick={loginWithGoogle}
-                  disabled={signingIn}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-50 rounded-lg transition-colors"
-                >
-                  {signingIn ? '...' : t('signInGoogle')}
-                </button>
+                !supabaseAuthReady && (
+                  <button
+                    onClick={loginWithGoogle}
+                    disabled={signingIn}
+                    className="px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-50 rounded-lg transition-colors"
+                  >
+                    {signingIn ? '...' : t('signInGoogle')}
+                  </button>
+                )
               ) : (
                 <button
                   onClick={seedCloudWithSampleData}
