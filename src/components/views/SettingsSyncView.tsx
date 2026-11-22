@@ -27,6 +27,7 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
     products,
     lang,
     user,
+    isAdmin,
     signingIn,
     isCloudMode,
     integrations,
@@ -42,11 +43,14 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
   } = usePos();
   const t = useT(lang);
 
-  const [tab, setTab] = useState<'profile' | 'cloud' | 'guide'>(initialTab);
+  const [tab, setTab] = useState<'profile' | 'cloud' | 'guide'>(
+    isAdmin ? initialTab : 'profile'
+  );
+  const activeTab: 'profile' | 'cloud' | 'guide' = isAdmin ? tab : 'profile';
 
   useEffect(() => {
-    setTab(initialTab);
-  }, [initialTab]);
+    setTab(isAdmin ? initialTab : 'profile');
+  }, [initialTab, isAdmin]);
 
   // Shop Settings Form
   const [shopName, setShopName] = useState(shop.shopName);
@@ -160,31 +164,33 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
 
   return (
     <div className="space-y-6">
-      {/* Sub-navigation Tabs */}
-      <div className="inline-flex flex-wrap items-center gap-1 p-1 bg-titanium-200/70 dark:bg-titanium-800 rounded-lg">
-        {(
-          [
-            ['profile', t('shopProfileTab')],
-            ['cloud', t('cloudBackupTab')],
-            ['guide', t('guideTab')],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-              tab === id
-                ? 'bg-white dark:bg-titanium-900 text-burgundy-800 dark:text-burgundy-200 shadow-xs'
-                : 'text-titanium-600 dark:text-titanium-400 hover:text-titanium-900 dark:hover:text-titanium-50'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* Sub-navigation Tabs (Admin sees all 3 tabs; Clients only see Shop Profile) */}
+      {isAdmin && (
+        <div className="inline-flex flex-wrap items-center gap-1 p-1 bg-titanium-200/70 dark:bg-titanium-800 rounded-lg">
+          {(
+            [
+              ['profile', t('shopProfileTab')],
+              ['cloud', t('cloudBackupTab')],
+              ['guide', t('guideTab')],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+                activeTab === id
+                  ? 'bg-white dark:bg-titanium-900 text-burgundy-800 dark:text-burgundy-200 shadow-xs'
+                  : 'text-titanium-600 dark:text-titanium-400 hover:text-titanium-900 dark:hover:text-titanium-50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* TAB 1: Editable Shop Profile */}
-      {tab === 'profile' && (
+      {activeTab === 'profile' && (
         <form
           onSubmit={handleSaveShop}
           className="max-w-2xl bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4"
@@ -287,8 +293,8 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
         </form>
       )}
 
-      {/* TAB 2: Cloud Databases (Firebase + Supabase), Telegram & Backup/Restore */}
-      {tab === 'cloud' && (
+      {/* TAB 2: Cloud Databases (Firebase + Supabase), Telegram & Backup/Restore (Admin only) */}
+      {isAdmin && activeTab === 'cloud' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Firebase Cloud Card */}
           <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4">
@@ -468,8 +474,8 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
         </div>
       )}
 
-      {/* TAB 3: Myanmar Step-by-Step Guide & Source Code Architecture */}
-      {tab === 'guide' && (
+      {/* TAB 3: Myanmar Step-by-Step Guide & Source Code Architecture (Admin only) */}
+      {isAdmin && activeTab === 'guide' && (
         <div className="max-w-4xl space-y-5">
           <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4">
             <h3 className="text-base font-bold text-titanium-900 dark:text-titanium-50">

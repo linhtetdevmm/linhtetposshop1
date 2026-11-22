@@ -7,7 +7,7 @@ interface ConnectionStatusBadgeProps {
 }
 
 export const ConnectionStatusBadge: React.FC<ConnectionStatusBadgeProps> = ({ onOpenSettings }) => {
-  const { lang, isCloudMode, user, integrations, cloudHealth, refreshCloudHealth } = usePos();
+  const { lang, isCloudMode, isAdmin, user, integrations, cloudHealth, refreshCloudHealth } = usePos();
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -300,17 +300,19 @@ export const ConnectionStatusBadge: React.FC<ConnectionStatusBadgeProps> = ({ on
               <RefreshCw className={`w-3.5 h-3.5 ${checking ? 'animate-spin' : ''}`} />
               {lang === 'my' ? 'ပြန်စစ်မည်' : 'Re-check'}
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onOpenSettings();
-              }}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors"
-            >
-              <Settings className="w-3.5 h-3.5" />
-              {lang === 'my' ? 'Cloud ဆက်တင်' : 'Cloud Setup'}
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onOpenSettings();
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                {lang === 'my' ? 'Cloud ဆက်တင်' : 'Cloud Setup'}
+              </button>
+            )}
           </div>
         </div>
       )}

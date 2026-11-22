@@ -95,7 +95,7 @@ function PosShell() {
     { id: 'expenses', label: t('navExpenses'), emoji: '🧾' },
     { id: 'delivery', label: t('navDelivery'), emoji: '🚚' },
     { id: 'reports', label: t('navReports'), emoji: '📈' },
-    { id: 'settings', label: t('navSettings'), emoji: '⚙️' },
+    { id: 'settings', label: isAdmin ? t('navSettings') : t('shopProfileTab'), emoji: '⚙️' },
     ...(isAdmin
       ? [
           {
@@ -416,7 +416,7 @@ function PosShell() {
           <div className="flex items-center gap-2.5 shrink-0">
             <ConnectionStatusBadge
               onOpenSettings={() => {
-                setSettingsTab('cloud');
+                setSettingsTab(isAdmin ? 'cloud' : 'profile');
                 setActiveTab('settings');
               }}
             />
