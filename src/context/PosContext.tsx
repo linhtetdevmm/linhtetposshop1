@@ -1307,8 +1307,8 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const raw = res.error || '';
           const friendly = raw.toLowerCase().includes('invalid login credentials')
             ? lang === 'my'
-              ? 'Email သို့မဟုတ် Password မှားယွင်းနေပါသည်။'
-              : 'Invalid email or password.'
+              ? 'Email သို့မဟုတ် Password မှားနေပါသည်။ ပထမဆုံးအကြိမ် ဝင်ခြင်းဖြစ်ပါက "အကောင့်သစ်ဖွင့်မည်" Tab ကို နှိပ်ပြီး အကောင့်တစ်ကြိမ် ဖွင့်ဝင်ပါ။'
+              : 'Invalid email or password. If this is your first time using Supabase login, switch to "Create Account" once to register.'
             : raw.toLowerCase().includes('email not confirmed')
             ? lang === 'my'
               ? 'သင့် Email ကို အတည်ပြုရန် Inbox ထဲမှ Confirm Link ကို နှိပ်ပေးပါ (သို့မဟုတ် Supabase Auth Settings တွင် Confirm Email ကို ပိတ်ထားပါ)။'

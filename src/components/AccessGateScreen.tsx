@@ -445,17 +445,17 @@ export const AccessGateScreen: React.FC = () => {
                   1.{' '}
                   {lang === 'my'
                     ? supabaseAuthReady
-                      ? 'သင့် Email + Password ဖြင့် ဝင်/ဖွင့်ပါ (VPN မလိုဘဲ PC/Safari အားလုံးတွင် ဝင်လို့ရပါသည်)။'
+                      ? 'ပထမဆုံးအကြိမ် ဝင်သူ (Admin loveking20178@gmail.com အပါအဝင်) ဖြစ်ပါက "အကောင့်သစ်ဖွင့်မည်" Tab ကိုနှိပ်ပြီး Email + Password အသစ်တစ်ခု တစ်ကြိမ်ဖွင့်ဝင်ပါ (VPN မလိုပါ)။'
                       : 'သင့် Gmail ဖြင့် ဝင်ရောက်ပါ (Admin Account ဖြစ်ပါက Pass မလိုဘဲ Admin Panel ပါ တိုက်ရိုက်ပွင့်မည်)။'
                     : supabaseAuthReady
-                    ? 'Sign in or create an account with Email & Password (works on any PC/Safari without VPN).'
+                    ? 'First time here (including Admin loveking20178@gmail.com)? Tap "Create Account" once with your Email & any 6+ char password (no VPN needed).'
                     : 'Sign in with your Gmail account (Admin account unlocks full control automatically).'}
                 </div>
                 <div>
                   2.{' '}
                   {lang === 'my'
-                    ? 'Admin ပေးထားသော Random Pass (ဥပမာ SHWE-XXXX-XXXX-XXXX) ထည့်သွင်း၍ ဝင်ရောက်ပါ။'
-                    : 'Enter your Admin-issued Random Pass (e.g. SHWE-XXXX-XXXX-XXXX) to activate.'}
+                    ? 'Admin Account ဖြစ်ပါက Pass မလိုဘဲ တိုက်ရိုက်ပွင့်ပါမည်။ Customer များသည် Admin ပေးသော Random Pass (ဥပမာ SHWE-XXXX-XXXX-XXXX) ထည့်၍ ဝင်ရပါမည်။'
+                    : 'Admin unlocks automatically without a pass. Customers enter their Admin-issued Random Pass (e.g. SHWE-XXXX-XXXX-XXXX).'}
                 </div>
               </div>
             </div>
