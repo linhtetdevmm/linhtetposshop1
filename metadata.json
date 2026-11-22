@@ -1,6 +1,6 @@
 {
-  "name": "ShwePOS — Bilingual POS & Inventory Suite",
-  "description": "Fast, lightweight Myanmar & English Point-of-Sale Dashboard with Inventory, Sales, Purchases, Debts, Expenses, Delivery, PNG/PDF Vouchers, CSV Reports, Telegram Alerts, and Firebase/Supabase sync.",
+  "name": "Lin Pos System",
+  "description": "Lin Pos System — Bilingual Myanmar & English Point-of-Sale & Inventory Suite with Sales, Purchases, Debts, Expenses, Delivery, PNG/PDF Vouchers, CSV Reports, Telegram Alerts, and Supabase/Firebase sync.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

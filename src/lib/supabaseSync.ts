@@ -388,7 +388,7 @@ export async function fetchSupabaseAdminData(): Promise<{
     shops: (shopsRes.data || []).map((r) => ({
       id: String(r.owner_id),
       ownerId: String(r.owner_id),
-      shopName: String(r.shop_name || 'ShwePOS Shop'),
+      shopName: String(r.shop_name || 'Lin Pos System Shop'),
       shopSubtitle: String(r.shop_subtitle || ''),
       phone: String(r.phone || ''),
       address: String(r.address || ''),

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  CalendarClock,
   CheckCircle2,
   Cloud,
   Copy,
@@ -8,15 +9,25 @@ import {
   Eye,
   EyeOff,
   FileCode2,
+  KeyRound,
   RefreshCw,
   Save,
   Send,
+  ShieldCheck,
+  Smartphone,
   Upload,
 } from 'lucide-react';
 import type { PosBackupPayload } from '../../types/pos';
 import { usePos } from '../../context/PosContext';
 import { useT } from '../../i18n/translations';
 import { formatMMK, getTodayISO } from '../../lib/format';
+import {
+  formatExpiryDate,
+  formatExpiryDateTime,
+  formatRemainingDetailed,
+  getRemainingTimeParts,
+  getSubscriptionProgressPercent,
+} from '../../lib/accessControl';
 import { firebaseProjectInfo } from '../../lib/firebase';
 import SUPABASE_SCHEMA_DOWNLOAD from '../../../supabase_schema.sql?raw';
 
@@ -31,6 +42,11 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
     lang,
     user,
     isAdmin,
+    subscriptionExpiry,
+    subscriptionDaysRemaining,
+    activeLicense,
+    activePass,
+    refreshSubscriptionStatus,
     supabaseAuthReady,
     signingIn,
     isCloudMode,
@@ -71,7 +87,13 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
   const [showTgToken, setShowTgToken] = useState(false);
 
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     setShopName(shop.shopName);
@@ -258,9 +280,196 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
         </div>
       )}
 
-      {/* TAB 1: Editable Shop Profile & Self-Service Telegram Integration */}
+      {/* TAB 1: Editable Shop Profile, License Remaining Details & Self-Service Telegram Integration */}
       {activeTab === 'profile' && (
         <div className="space-y-6 max-w-2xl">
+          {!isAdmin && subscriptionExpiry !== null && (() => {
+            const parts = getRemainingTimeParts(subscriptionExpiry, nowMs);
+            const remDays = subscriptionDaysRemaining ?? 0;
+            const createdAtMs = activePass?.createdAtMs || activeLicense?.createdAtMs;
+            const estimatedTotalDays =
+              activePass?.durationDays && activePass.durationDays > 0
+                ? activePass.durationDays
+                : createdAtMs && subscriptionExpiry > createdAtMs
+                ? Math.max(1, Math.round((subscriptionExpiry - createdAtMs) / (1000 * 60 * 60 * 24)))
+                : Math.max(30, remDays);
+            const progressPct = getSubscriptionProgressPercent(
+              subscriptionExpiry,
+              estimatedTotalDays,
+              createdAtMs,
+              nowMs
+            );
+            const isCritical = remDays <= 1 || parts.expired;
+            const isWarning = !isCritical && remDays <= 5;
+            const passCode = activeLicense?.passCode || activePass?.code || '—';
+            const planLabel = activeLicense?.label || activePass?.label || 'Standard';
+            const boundCount = activePass?.boundDevices?.length ?? 1;
+            const maxDevices = activePass?.maxDevices ?? activeLicense?.maxDevices ?? 1;
+
+            return (
+              <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-titanium-900 dark:text-titanium-50 flex items-center gap-2">
+                      <CalendarClock className="w-4 h-4 text-burgundy-700 dark:text-burgundy-300" />
+                      {lang === 'my'
+                        ? 'လိုင်စင်နှင့် လက်ကျန်ရက် အသေးစိတ်'
+                        : 'Subscription & Remaining Time'}
+                    </h3>
+                    <p className="text-xs text-titanium-500 dark:text-titanium-400 mt-0.5">
+                      {formatRemainingDetailed(subscriptionExpiry, lang, nowMs, false)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-md border ${
+                        isCritical
+                          ? 'bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 border-red-200 dark:border-red-900'
+                          : isWarning
+                          ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-900'
+                          : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900'
+                      }`}
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      {isCritical
+                        ? lang === 'my'
+                          ? 'သက်တမ်းကုန်ခါနီး'
+                          : 'Expiring'
+                        : isWarning
+                        ? lang === 'my'
+                          ? 'သက်တမ်းတိုးရန်'
+                          : 'Renew Soon'
+                        : lang === 'my'
+                        ? 'အသုံးပြုနိုင်'
+                        : 'Active'}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={busyAction === 'refreshLicense'}
+                      onClick={async () => {
+                        setBusyAction('refreshLicense');
+                        try {
+                          const ok = await refreshSubscriptionStatus();
+                          setNowMs(Date.now());
+                          showToast(
+                            ok
+                              ? lang === 'my'
+                                ? 'လိုင်စင်သက်တမ်းကို ပြန်လည်စစ်ဆေးပြီးပါပြီ။'
+                                : 'Subscription status refreshed.'
+                              : lang === 'my'
+                              ? 'လိုင်စင်သက်တမ်း စစ်ဆေးမှု မအောင်မြင်ပါ။'
+                              : 'Could not refresh license status.',
+                            ok ? 'success' : 'error'
+                          );
+                        } finally {
+                          setBusyAction(null);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-titanium-700 dark:text-titanium-200 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200 dark:hover:bg-titanium-700 disabled:opacity-50 rounded-md transition-colors"
+                    >
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 ${
+                          busyAction === 'refreshLicense' ? 'animate-spin' : ''
+                        }`}
+                      />
+                      {lang === 'my' ? 'ပြန်စစ်' : 'Refresh'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Live Days / Hours / Minutes Breakdown */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3 rounded-lg bg-titanium-50 dark:bg-titanium-950 border border-titanium-200/80 dark:border-titanium-800 text-center">
+                    <div className="text-xl font-bold font-mono-num text-titanium-900 dark:text-titanium-50">
+                      {parts.days}
+                    </div>
+                    <div className="text-[11px] text-titanium-500 dark:text-titanium-400">
+                      {lang === 'my' ? 'ရက် (Days)' : 'Days'}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-titanium-50 dark:bg-titanium-950 border border-titanium-200/80 dark:border-titanium-800 text-center">
+                    <div className="text-xl font-bold font-mono-num text-titanium-900 dark:text-titanium-50">
+                      {parts.hours}
+                    </div>
+                    <div className="text-[11px] text-titanium-500 dark:text-titanium-400">
+                      {lang === 'my' ? 'နာရီ (Hours)' : 'Hours'}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-titanium-50 dark:bg-titanium-950 border border-titanium-200/80 dark:border-titanium-800 text-center">
+                    <div className="text-xl font-bold font-mono-num text-titanium-900 dark:text-titanium-50">
+                      {parts.minutes}
+                    </div>
+                    <div className="text-[11px] text-titanium-500 dark:text-titanium-400">
+                      {lang === 'my' ? 'မိနစ် (Mins)' : 'Minutes'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="space-y-1.5">
+                  <div className="w-full h-2 bg-titanium-200 dark:bg-titanium-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        isCritical
+                          ? 'bg-red-600 dark:bg-red-500'
+                          : isWarning
+                          ? 'bg-amber-500 dark:bg-amber-400'
+                          : 'bg-emerald-600 dark:bg-emerald-500'
+                      }`}
+                      style={{ width: `${progressPct}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] font-mono-num text-titanium-500 dark:text-titanium-400">
+                    <span>
+                      {remDays} / {estimatedTotalDays}{' '}
+                      {lang === 'my' ? 'ရက် ကျန်ရှိသည်' : 'days remaining'}
+                    </span>
+                    <span>{progressPct}%</span>
+                  </div>
+                </div>
+
+                {/* License Metadata */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-titanium-100 dark:border-titanium-800 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-titanium-500 dark:text-titanium-400">
+                      <KeyRound className="w-3.5 h-3.5" />
+                      Pass Code
+                    </span>
+                    <span className="font-mono-num font-semibold text-burgundy-800 dark:text-burgundy-300 truncate">
+                      {passCode}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-titanium-500 dark:text-titanium-400">
+                      {lang === 'my' ? 'အမျိုးအစား' : 'Plan'}
+                    </span>
+                    <span className="font-medium text-titanium-800 dark:text-titanium-200 truncate">
+                      {planLabel}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-titanium-500 dark:text-titanium-400">
+                      {lang === 'my' ? 'ကုန်ဆုံးမည့်အချိန်' : 'Expires At'}
+                    </span>
+                    <span className="font-mono-num font-semibold text-titanium-900 dark:text-titanium-100">
+                      {formatExpiryDateTime(subscriptionExpiry)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-titanium-500 dark:text-titanium-400">
+                      <Smartphone className="w-3.5 h-3.5" />
+                      {lang === 'my' ? 'စက်အရေအတွက်' : 'Devices'}
+                    </span>
+                    <span className="font-mono-num text-titanium-800 dark:text-titanium-200">
+                      {boundCount} / {maxDevices}
+                      {createdAtMs ? ` · ${formatExpiryDate(createdAtMs)}` : ''}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           <form
             onSubmit={handleSaveShop}
             className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4"
@@ -717,7 +926,7 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
               ၁။ စနစ်တည်ဆောက်ပုံ (Folder Architecture &amp; Source Code ရှင်းလင်းချက်)
             </h3>
             <p className="text-sm text-titanium-600 dark:text-titanium-300 leading-relaxed">
-              ဤ ShwePOS Web App ကို မည်မျှပင် အရောင်းများနေစေကာမူ Server မကျပ်ဘဲ အမြဲပေါ့ပါးသွက်လက်နေစေရန်{' '}
+              ဤ Lin Pos System Web App ကို မည်မျှပင် အရောင်းများနေစေကာမူ Server မကျပ်ဘဲ အမြဲပေါ့ပါးသွက်လက်နေစေရန်{' '}
               <strong>Offline-First + Local Cache Architecture</strong> ဖြင့် တည်ဆောက်ထားပါသည်။
             </p>
             <div className="bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-800 rounded-lg p-4 font-mono-num text-xs leading-relaxed text-titanium-700 dark:text-titanium-300 overflow-x-auto">

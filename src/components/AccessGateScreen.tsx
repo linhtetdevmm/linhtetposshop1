@@ -52,7 +52,19 @@ export const AccessGateScreen: React.FC = () => {
   const [nameInput, setNameInput] = useState('');
   const [authInfoMsg, setAuthInfoMsg] = useState<string | null>(null);
 
-  const [passInput, setPassInput] = useState('');
+  const [passInput, setPassInput] = useState(() => {
+    try {
+      const fromUrl = new URLSearchParams(window.location.search).get('pass');
+      if (fromUrl && fromUrl.trim().length >= 6) {
+        const normalized = normalizePassCode(fromUrl);
+        sessionStorage.setItem('linpos_pending_pass', normalized);
+        return normalized;
+      }
+      return sessionStorage.getItem('linpos_pending_pass') || '';
+    } catch {
+      return '';
+    }
+  });
   const [submitting, setSubmitting] = useState(false);
   const [checkingRenewal, setCheckingRenewal] = useState(false);
   const [renewalInfoMsg, setRenewalInfoMsg] = useState<string | null>(null);
@@ -110,6 +122,16 @@ export const AccessGateScreen: React.FC = () => {
         setErrorMsg(res.error || (lang === 'my' ? 'Pass မမှန်ကန်ပါ။' : 'Invalid pass code.'));
       } else {
         setPassInput('');
+        try {
+          sessionStorage.removeItem('linpos_pending_pass');
+          const url = new URL(window.location.href);
+          if (url.searchParams.has('pass')) {
+            url.searchParams.delete('pass');
+            window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+          }
+        } catch {
+          // Ignore URL/storage errors
+        }
       }
     } finally {
       setSubmitting(false);
@@ -137,13 +159,13 @@ export const AccessGateScreen: React.FC = () => {
   const handleCopyRenewalRequest = async () => {
     const expiryLabel = formatExpiryDate(effectiveExpiryMs);
     const requestText = [
-      'ShwePOS Subscription Renewal Request',
-      `Gmail: ${user?.email || ''}`,
+      'Lin Pos System Subscription Renewal Request',
+      `Account: ${user?.email || ''}`,
       activeLicense?.passCode ? `Current Pass: ${activeLicense.passCode}` : null,
       effectiveExpiryMs ? `Expired On: ${expiryLabel}` : null,
       lang === 'my'
-        ? 'ShwePOS လိုင်စင် သက်တမ်းတိုးပေးရန် တောင်းဆိုအပ်ပါသည်။'
-        : 'Please extend my ShwePOS subscription license.',
+        ? 'Lin Pos System လိုင်စင် သက်တမ်းတိုးပေးရန် တောင်းဆိုအပ်ပါသည်။'
+        : 'Please extend my Lin Pos System subscription license.',
     ]
       .filter(Boolean)
       .join('\n');
@@ -204,7 +226,7 @@ export const AccessGateScreen: React.FC = () => {
           </div>
           <div>
             <div className="text-sm font-bold tracking-tight text-burgundy-800 dark:text-burgundy-300">
-              ShwePOS
+              Lin Pos System
             </div>
             <div className="text-[11px] text-titanium-500 dark:text-titanium-400">
               {expiredState
@@ -260,8 +282,8 @@ export const AccessGateScreen: React.FC = () => {
             <h1 className="text-lg font-bold tracking-tight text-titanium-900 dark:text-titanium-50">
               {!user
                 ? lang === 'my'
-                  ? 'ShwePOS ဝင်ခွင့်စစ်ဆေးခြင်း'
-                  : 'Sign In to ShwePOS'
+                  ? 'Lin Pos System ဝင်ခွင့်စစ်ဆေးခြင်း'
+                  : 'Sign In to Lin Pos System'
                 : expiredState
                 ? lang === 'my'
                   ? 'သက်တမ်းတိုးရန် (Renew Subscription)'
@@ -291,6 +313,13 @@ export const AccessGateScreen: React.FC = () => {
 
           {!user ? (
             <div className="space-y-4">
+              {passInput.trim().length >= 6 && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 text-[11px] text-emerald-900 dark:text-emerald-200 leading-relaxed">
+                  {lang === 'my'
+                    ? `Access Pass (${passInput}) ကို Link မှတစ်ဆင့် အသင့်ထည့်သွင်းထားပါသည်။ Email ဖြင့် ဝင်ပြီးတာနဲ့ အတည်ပြုနိုင်ပါမည်။`
+                    : `Access Pass (${passInput}) is pre-filled from your invite link. Sign in or create an account below to activate it.`}
+                </div>
+              )}
               {supabaseAuthReady && (
                 <div className="space-y-3.5">
                   <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-titanium-100 dark:bg-titanium-800">

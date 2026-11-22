@@ -7,9 +7,11 @@ import {
   Edit3,
   ExternalLink,
   KeyRound,
+  Link2,
   RefreshCw,
   RotateCcw,
   Search,
+  Share2,
   Shield,
   Smartphone,
   Store,
@@ -39,6 +41,8 @@ import {
 } from '../../lib/supabaseSync';
 import {
   formatExpiryDate,
+  formatExpiryDateTime,
+  formatRemainingDetailed,
   generateRandomPassCode,
   getRemainingDays,
   normalizePassCode,
@@ -72,6 +76,38 @@ const DURATION_PRESETS = [
   { days: 365, my: '၁ နှစ် (၃၆၅ ရက်)', en: '1 Year' },
 ];
 
+const DEFAULT_PUBLIC_APP_URL = 'https://linhtetposshop1.vercel.app';
+const SHARE_URL_STORAGE_KEY = 'linpos_share_web_url';
+
+function normalizeShareUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  if (!trimmed) return DEFAULT_PUBLIC_APP_URL;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+function resolveDefaultShareUrl(): string {
+  try {
+    const saved = localStorage.getItem(SHARE_URL_STORAGE_KEY);
+    if (saved && saved.trim()) return normalizeShareUrl(saved);
+  } catch {
+    // Ignore storage errors
+  }
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname.toLowerCase();
+    // Private dev preview / localhost links cannot be opened by customers
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host.startsWith('ais-dev-')
+    ) {
+      return DEFAULT_PUBLIC_APP_URL;
+    }
+    return normalizeShareUrl(window.location.origin);
+  }
+  return DEFAULT_PUBLIC_APP_URL;
+}
+
 export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) => {
   const { user, isAdmin, lang, showToast, adminSelectShop, activeShopId } = usePos();
 
@@ -84,7 +120,8 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
   // Generator form state
   const [label, setLabel] = useState('');
   const [note, setNote] = useState('');
-  const [passCode, setPassCode] = useState(() => generateRandomPassCode('SHWE'));
+  const [passCode, setPassCode] = useState(() => generateRandomPassCode('LIN'));
+  const [shareWebUrl, setShareWebUrl] = useState<string>(() => resolveDefaultShareUrl());
   const [durationMode, setDurationMode] = useState<'preset' | 'custom'>('preset');
   const [durationDays, setDurationDays] = useState<number>(30);
   const [customExpiryDate, setCustomExpiryDate] = useState<string>(() => {
@@ -259,27 +296,86 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
     });
   }, [passes, search, statusFilter, nowMs]);
 
-  const copyText = async (text: string, msgMy: string, msgEn: string) => {
+  const handleShareUrlChange = (next: string) => {
+    setShareWebUrl(next);
     try {
-      await navigator.clipboard.writeText(text);
-      showToast(lang === 'my' ? msgMy : msgEn);
+      if (next.trim()) {
+        localStorage.setItem(SHARE_URL_STORAGE_KEY, next.trim());
+      } else {
+        localStorage.removeItem(SHARE_URL_STORAGE_KEY);
+      }
     } catch {
-      showToast(text, 'info');
+      // Ignore storage errors
     }
   };
 
+  const copyText = async (text: string, msgMy: string, msgEn: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        showToast(lang === 'my' ? msgMy : msgEn);
+        return;
+      }
+    } catch {
+      // Fall through to textarea fallback
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const copied = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (copied) {
+        showToast(lang === 'my' ? msgMy : msgEn);
+        return;
+      }
+    } catch {
+      // Fall through
+    }
+    showToast(text, 'info');
+  };
+
   const buildShareInvite = (p: AccessPass) => {
-    const appUrl = window.location.origin;
+    const baseUrl = normalizeShareUrl(shareWebUrl);
+    const directUrl = `${baseUrl}/?pass=${encodeURIComponent(p.code)}`;
     const expStr = formatExpiryDate(p.expiresAtMs);
     return [
-      `ShwePOS Access Pass (${p.label})`,
-      `Web Link: ${appUrl}`,
+      `Lin Pos System — Access Pass (${p.label})`,
+      `Web Link: ${directUrl}`,
       `Access Pass: ${p.code}`,
       `Valid Until: ${expStr} (${p.maxDevices} Device${p.maxDevices > 1 ? 's' : ''})`,
       isSupabaseMode
-        ? `Email + Password ဖြင့် အကောင့်ဝင်/ဖွင့်ပြီး အထက်ပါ Access Pass ကို ထည့်သွင်းအသုံးပြုနိုင်ပါသည်။`
-        : `Google Account (Gmail) ဖြင့်ဝင်ပြီး အထက်ပါ Access Pass ကို ထည့်သွင်းအသုံးပြုနိုင်ပါသည်။`,
+        ? `အထက်ပါ Link ကို နှိပ်ပြီး Email + Password ဖြင့် အကောင့်ဝင်/ဖွင့်ကာ Access Pass ကို အတည်ပြုအသုံးပြုနိုင်ပါသည်။`
+        : `အထက်ပါ Link ကို နှိပ်ပြီး အကောင့်ဝင်ကာ Access Pass ကို ထည့်သွင်းအသုံးပြုနိုင်ပါသည်။`,
     ].join('\n');
+  };
+
+  const shareInvite = async (p: AccessPass) => {
+    const text = buildShareInvite(p);
+    const baseUrl = normalizeShareUrl(shareWebUrl);
+    const directUrl = `${baseUrl}/?pass=${encodeURIComponent(p.code)}`;
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: `Lin Pos System — ${p.label}`,
+          text,
+          url: directUrl,
+        });
+        return;
+      } catch (err) {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+      }
+    }
+    await copyText(
+      text,
+      'Viber/Telegram ပို့ရန် ဖိတ်စာ Copy ကူးပြီးပါပြီ။',
+      'Invite message copied.'
+    );
   };
 
   const handleCreatePass = async (e: React.FormEvent) => {
@@ -369,7 +465,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
       setLastCreatedPass(created);
       setLabel('');
       setNote('');
-      setPassCode(generateRandomPassCode('SHWE'));
+      setPassCode(generateRandomPassCode('LIN'));
       showToast(
         lang === 'my'
           ? `Random Pass (${cleanCode}) ထုတ်ပေးပြီးပါပြီ။`
@@ -898,7 +994,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
                   />
                   <button
                     type="button"
-                    onClick={() => setPassCode(generateRandomPassCode('SHWE'))}
+                    onClick={() => setPassCode(generateRandomPassCode('LIN'))}
                     className="px-2.5 py-2 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200 dark:hover:bg-titanium-700 rounded-lg text-titanium-700 dark:text-titanium-200 transition-colors"
                     title={lang === 'my' ? 'Random အသစ်ထုတ်မည်' : 'Regenerate Random Code'}
                   >
@@ -1012,6 +1108,53 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
               </button>
             </div>
 
+            {/* Public Share URL Configuration */}
+            <div className="p-3 rounded-xl bg-titanium-50 dark:bg-titanium-950 border border-titanium-200/80 dark:border-titanium-800 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="inline-flex items-center gap-1.5 text-xs font-medium text-titanium-700 dark:text-titanium-300">
+                  <Link2 className="w-3.5 h-3.5 text-burgundy-700 dark:text-burgundy-300" />
+                  {lang === 'my'
+                    ? 'Customer ထံ Share ပေးမည့် Public Web Link'
+                    : 'Public Share Web Link (Used in Invites)'}
+                </label>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleShareUrlChange(DEFAULT_PUBLIC_APP_URL)}
+                    className="px-2 py-0.5 text-[11px] font-medium rounded bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-700 text-titanium-700 dark:text-titanium-300 hover:border-burgundy-500"
+                  >
+                    Vercel Live
+                  </button>
+                  {typeof window !== 'undefined' &&
+                    window.location.hostname.toLowerCase().startsWith('ais-dev-') && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleShareUrlChange(
+                            window.location.origin.replace('https://ais-dev-', 'https://ais-pre-')
+                          )
+                        }
+                        className="px-2 py-0.5 text-[11px] font-medium rounded bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-700 text-titanium-700 dark:text-titanium-300 hover:border-burgundy-500"
+                      >
+                        AI Studio Shared
+                      </button>
+                    )}
+                </div>
+              </div>
+              <input
+                type="url"
+                value={shareWebUrl}
+                onChange={(e) => handleShareUrlChange(e.target.value)}
+                placeholder={DEFAULT_PUBLIC_APP_URL}
+                className="w-full px-3 py-1.5 text-xs font-mono-num bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+              />
+              <p className="text-[11px] text-titanium-500 dark:text-titanium-400">
+                {lang === 'my'
+                  ? 'AI Studio Preview (ais-dev) Link သည် ပြင်ပဖုန်းများမှ ဝင်၍မရသောကြောင့် Customer များထံ ပို့သည့်အခါ Public Vercel Link (သို့) Shared App URL ကို အလိုအလျောက် ထည့်သွင်းပေးထားပါသည်။'
+                  : 'Private preview (ais-dev) links do not work for customers, so invites automatically use your public production URL.'}
+              </p>
+            </div>
+
             {/* Instant Copy Bar for Newly Generated Pass */}
             {lastCreatedPass && (
               <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1026,7 +1169,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
                     {formatExpiryDate(lastCreatedPass.expiresAtMs)} · {lastCreatedPass.maxDevices} Device(s)
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <button
                     type="button"
                     onClick={() =>
@@ -1054,6 +1197,14 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
                   >
                     <Copy className="w-3.5 h-3.5" />
                     {lang === 'my' ? 'ဖိတ်စာအပြည့် Copy' : 'Copy Invite'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => shareInvite(lastCreatedPass)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-burgundy-700 hover:bg-burgundy-800 text-white rounded-lg"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    {lang === 'my' ? 'Share' : 'Share'}
                   </button>
                 </div>
               </div>
@@ -1153,8 +1304,8 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
                                 ? 'သက်တမ်းကုန်'
                                 : 'Expired'
                               : lang === 'my'
-                              ? `Active (${remDays} ရက်ကျန်)`
-                              : `Active (${remDays}d left)`}
+                              ? `Active (${formatRemainingDetailed(p.expiresAtMs, lang, nowMs, true)})`
+                              : `Active (${formatRemainingDetailed(p.expiresAtMs, lang, nowMs, true)})`}
                           </span>
 
                           <span className="text-xs font-semibold text-titanium-900 dark:text-titanium-50">
@@ -1164,9 +1315,9 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
 
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-titanium-500 dark:text-titanium-400">
                           <span className="font-mono-num">
-                            {lang === 'my' ? 'ကုန်ဆုံးရက်' : 'Expires'}:{' '}
+                            {lang === 'my' ? 'ကုန်ဆုံးချိန်' : 'Expires'}:{' '}
                             <strong className="text-titanium-700 dark:text-titanium-200">
-                              {formatExpiryDate(p.expiresAtMs)}
+                              {formatExpiryDateTime(p.expiresAtMs)}
                             </strong>
                           </span>
                           <span className="inline-flex items-center gap-1 font-mono-num">
@@ -1188,16 +1339,11 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
                       <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                         <button
                           type="button"
-                          onClick={() =>
-                            copyText(
-                              buildShareInvite(p),
-                              'ဖိတ်စာ Copy ကူးပြီးပါပြီ။',
-                              'Invite message copied.'
-                            )
-                          }
-                          className="px-2.5 py-1.5 text-[11px] font-medium bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200 dark:hover:bg-titanium-700 text-titanium-700 dark:text-titanium-200 rounded-lg"
+                          onClick={() => shareInvite(p)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200 dark:hover:bg-titanium-700 text-titanium-700 dark:text-titanium-200 rounded-lg"
                         >
-                          {lang === 'my' ? 'ဖိတ်စာ' : 'Invite'}
+                          <Share2 className="w-3 h-3" />
+                          {lang === 'my' ? 'ဖိတ်စာ Share' : 'Share'}
                         </button>
                         <button
                           type="button"
@@ -1339,7 +1485,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
                                 ? 'Revoked'
                                 : remDays <= 0
                                 ? 'Expired'
-                                : `${remDays}d left · ${formatExpiryDate(lic.expiresAtMs)}`}
+                                : `${formatRemainingDetailed(lic.expiresAtMs, lang, nowMs, true)} · ${formatExpiryDateTime(lic.expiresAtMs)}`}
                             </span>
                           )}
                         </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Globe,
   LogIn,
@@ -16,9 +16,20 @@ import type { NavTab, Sale } from './types/pos';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PosProvider, usePos } from './context/PosContext';
 import { useT } from './i18n/translations';
-import { formatExpiryDate } from './lib/accessControl';
+import {
+  formatExpiryDate,
+  formatExpiryDateTime,
+  formatRemainingDetailed,
+} from './lib/accessControl';
+import {
+  getLowStockProducts,
+  loadStockThreshold,
+  saveStockThreshold,
+} from './lib/stockAlerts';
 import { VoucherModal } from './components/VoucherModal';
 import { ConnectionStatusBadge } from './components/ConnectionStatusBadge';
+import { LowStockNotification } from './components/LowStockNotification';
+import { SubscriptionBadge } from './components/SubscriptionBadge';
 import { AccessGateScreen } from './components/AccessGateScreen';
 import { DashboardView } from './components/views/DashboardView';
 import { PosSalesView } from './components/views/PosSalesView';
@@ -35,6 +46,8 @@ import { AdminAccessView } from './components/views/AdminAccessView';
 function PosShell() {
   const {
     shop,
+    products,
+    activeShopId,
     lang,
     setLang,
     darkMode,
@@ -68,6 +81,35 @@ function PosShell() {
   });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [voucherSale, setVoucherSale] = useState<Sale | null>(null);
+  const [customStockThreshold, setCustomStockThreshold] = useState<number | null>(() =>
+    loadStockThreshold(activeShopId)
+  );
+  const [stockLowOnlyKey, setStockLowOnlyKey] = useState(0);
+
+  useEffect(() => {
+    setCustomStockThreshold(loadStockThreshold(activeShopId));
+  }, [activeShopId]);
+
+  const handleChangeStockThreshold = (next: number | null) => {
+    setCustomStockThreshold(next);
+    saveStockThreshold(activeShopId, next);
+  };
+
+  const lowStockProducts = useMemo(
+    () => getLowStockProducts(products, customStockThreshold),
+    [products, customStockThreshold]
+  );
+  const lowStockCount = lowStockProducts.length;
+  const hasOutOfStock = useMemo(
+    () => lowStockProducts.some((p) => p.stock <= 0),
+    [lowStockProducts]
+  );
+
+  const handleOpenLowStockView = () => {
+    setStockLowOnlyKey((k) => k + 1);
+    setActiveTab('stock');
+    setMobileMenuOpen(false);
+  };
 
   const toggleSidebar = () => {
     setSidebarExpanded((prev) => {
@@ -145,9 +187,7 @@ function PosShell() {
                 {isAdmin
                   ? 'Super Admin · MMK'
                   : remainingDays !== null && subscriptionExpiry
-                  ? lang === 'my'
-                    ? `${remainingDays} ရက်ကျန် (${formatExpiryDate(subscriptionExpiry)})`
-                    : `${remainingDays}d left (${formatExpiryDate(subscriptionExpiry)})`
+                  ? `${formatRemainingDetailed(subscriptionExpiry, lang, Date.now(), true)} · ${formatExpiryDate(subscriptionExpiry)}`
                   : isCloudMode
                   ? `${t('cloudSynced')} · MMK`
                   : `${t('localDemoMode')} · MMK`}
@@ -183,14 +223,22 @@ function PosShell() {
         <nav className={`flex-1 overflow-y-auto py-3 space-y-1 ${sidebarExpanded ? 'px-3' : 'px-2'}`}>
           {navItems.map((item) => {
             const active = activeTab === item.id;
+            const showStockBadge = item.id === 'stock' && lowStockCount > 0;
+            const badgeText = lowStockCount > 99 ? '99+' : String(lowStockCount);
+            const badgeTone = hasOutOfStock
+              ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/70 dark:text-red-300 dark:border-red-800/80'
+              : 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800/80';
+            const stockTitle = showStockBadge
+              ? `${item.label} (${lowStockCount} ${lang === 'my' ? 'မျိုး လက်ကျန်နည်း' : 'low stock'})`
+              : item.label;
             return (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => handleSelectNav(item.id)}
-                title={item.label}
-                aria-label={item.label}
-                className={`w-full flex items-center rounded-xl transition-colors ${
+                title={stockTitle}
+                aria-label={stockTitle}
+                className={`relative w-full flex items-center rounded-xl transition-colors ${
                   sidebarExpanded ? 'gap-3 px-3 py-2.5 text-left' : 'justify-center py-2.5 px-1'
                 } ${
                   active
@@ -202,6 +250,20 @@ function PosShell() {
                   {item.emoji}
                 </span>
                 {sidebarExpanded && <span className="text-sm truncate">{item.label}</span>}
+                {showStockBadge &&
+                  (sidebarExpanded ? (
+                    <span
+                      className={`ml-auto px-1.5 py-0.5 text-[10px] font-mono-num font-semibold rounded-md border leading-none shrink-0 ${badgeTone}`}
+                    >
+                      {badgeText}
+                    </span>
+                  ) : (
+                    <span
+                      className={`absolute top-1 right-1 min-w-[16px] h-4 px-1 inline-flex items-center justify-center text-[9px] font-mono-num font-bold rounded-full border leading-none ${badgeTone}`}
+                    >
+                      {badgeText}
+                    </span>
+                  ))}
               </button>
             );
           })}
@@ -337,6 +399,10 @@ function PosShell() {
             <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
               {navItems.map((item) => {
                 const active = activeTab === item.id;
+                const showStockBadge = item.id === 'stock' && lowStockCount > 0;
+                const badgeTone = hasOutOfStock
+                  ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/70 dark:text-red-300 dark:border-red-800/80'
+                  : 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800/80';
                 return (
                   <button
                     key={item.id}
@@ -351,11 +417,39 @@ function PosShell() {
                       {item.emoji}
                     </span>
                     <span className="truncate">{item.label}</span>
+                    {showStockBadge && (
+                      <span
+                        className={`ml-auto px-1.5 py-0.5 text-[10px] font-mono-num font-semibold rounded-md border leading-none shrink-0 ${badgeTone}`}
+                      >
+                        {lowStockCount > 99 ? '99+' : lowStockCount}
+                      </span>
+                    )}
                   </button>
                 );
               })}
             </nav>
             <div className="p-3 border-t border-titanium-200 dark:border-titanium-800 space-y-2">
+              {!isAdmin && subscriptionExpiry !== null && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsTab('profile');
+                    handleSelectNav('settings');
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-lg border text-xs transition-colors ${
+                    remainingDays !== null && remainingDays <= 5
+                      ? 'bg-amber-50 dark:bg-amber-950/35 border-amber-200 dark:border-amber-900/60 text-amber-900 dark:text-amber-200'
+                      : 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200/80 dark:border-emerald-900/60 text-emerald-900 dark:text-emerald-200'
+                  }`}
+                >
+                  <div className="font-semibold font-mono-num truncate">
+                    {formatRemainingDetailed(subscriptionExpiry, lang, Date.now(), false)}
+                  </div>
+                  <div className="text-[11px] opacity-80 font-mono-num truncate mt-0.5">
+                    {lang === 'my' ? 'ကုန်ဆုံးချိန်' : 'Expires'}: {formatExpiryDateTime(subscriptionExpiry)}
+                  </div>
+                </button>
+              )}
               <div className="flex gap-2">
                 <button
                   onClick={() => setLang(lang === 'my' ? 'en' : 'my')}
@@ -416,7 +510,19 @@ function PosShell() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            <SubscriptionBadge
+              onOpenSettings={() => {
+                setSettingsTab('profile');
+                setActiveTab('settings');
+              }}
+            />
+            <LowStockNotification
+              lowStockProducts={lowStockProducts}
+              customThreshold={customStockThreshold}
+              onChangeThreshold={handleChangeStockThreshold}
+              onOpenStock={handleOpenLowStockView}
+            />
             <ConnectionStatusBadge
               onOpenSettings={() => {
                 setSettingsTab(isAdmin ? 'cloud' : 'profile');
@@ -470,7 +576,13 @@ function PosShell() {
           )}
           {activeTab === 'products' && <ProductsView />}
           {activeTab === 'purchases' && <PurchasesView />}
-          {activeTab === 'stock' && <StockView />}
+          {activeTab === 'stock' && (
+            <StockView
+              customThreshold={customStockThreshold}
+              onChangeThreshold={handleChangeStockThreshold}
+              initialLowOnlyKey={stockLowOnlyKey}
+            />
+          )}
           {activeTab === 'debts' && <DebtsView />}
           {activeTab === 'expenses' && <ExpensesView />}
           {activeTab === 'delivery' && <DeliveryView />}

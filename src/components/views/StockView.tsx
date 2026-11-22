@@ -1,11 +1,26 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pencil, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import type { Product, StockLog } from '../../types/pos';
 import { usePos } from '../../context/PosContext';
 import { useT } from '../../i18n/translations';
 import { calculateMarginPercent, calculateSellPrice, formatMMK } from '../../lib/format';
+import {
+  getEffectiveStockThreshold,
+  getLowStockProducts,
+  isProductLowStock,
+} from '../../lib/stockAlerts';
 
-export const StockView: React.FC = () => {
+interface StockViewProps {
+  customThreshold?: number | null;
+  onChangeThreshold?: (next: number | null) => void;
+  initialLowOnlyKey?: number;
+}
+
+export const StockView: React.FC<StockViewProps> = ({
+  customThreshold = null,
+  onChangeThreshold,
+  initialLowOnlyKey = 0,
+}) => {
   const {
     products,
     stockLogs,
@@ -18,7 +33,22 @@ export const StockView: React.FC = () => {
   } = usePos();
   const t = useT(lang);
 
-  const [lowOnly, setLowOnly] = useState(false);
+  const [lowOnly, setLowOnly] = useState(initialLowOnlyKey > 0);
+  const [thresholdInput, setThresholdInput] = useState(
+    customThreshold !== null ? String(customThreshold) : '5'
+  );
+
+  useEffect(() => {
+    if (initialLowOnlyKey > 0) {
+      setLowOnly(true);
+    }
+  }, [initialLowOnlyKey]);
+
+  useEffect(() => {
+    if (customThreshold !== null) {
+      setThresholdInput(String(customThreshold));
+    }
+  }, [customThreshold]);
 
   // Stock Adjustment modal
   const [adjustTarget, setAdjustTarget] = useState<Product | null>(null);
@@ -64,9 +94,14 @@ export const StockView: React.FC = () => {
     };
   }, [products]);
 
+  const lowStockList = useMemo(
+    () => getLowStockProducts(products, customThreshold),
+    [products, customThreshold]
+  );
+
   const displayedProducts = useMemo(
-    () => (lowOnly ? products.filter((p) => p.stock <= p.minStock) : products),
-    [products, lowOnly]
+    () => (lowOnly ? lowStockList : products),
+    [products, lowStockList, lowOnly]
   );
 
   const openEditProduct = (p: Product) => {
@@ -167,17 +202,69 @@ export const StockView: React.FC = () => {
 
       {/* Inventory Stock Table */}
       <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-titanium-200 dark:border-titanium-800 flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">{t('navStock')}</h3>
-          <label className="inline-flex items-center gap-2 text-xs font-medium text-titanium-700 dark:text-titanium-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={lowOnly}
-              onChange={(e) => setLowOnly(e.target.checked)}
-              className="rounded border-titanium-300 dark:border-titanium-700 accent-burgundy-700 text-burgundy-700"
-            />
-            {t('lowStockOnly')}
-          </label>
+        <div className="px-5 py-4 border-b border-titanium-200 dark:border-titanium-800 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">{t('navStock')}</h3>
+            {lowStockList.length > 0 && (
+              <span className="px-2 py-0.5 text-[11px] font-mono-num font-semibold rounded-md bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/70">
+                {lowStockList.length} {lang === 'my' ? 'မျိုး နည်းနေ' : 'low'}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {onChangeThreshold && (
+              <div className="inline-flex items-center gap-1.5 text-xs text-titanium-600 dark:text-titanium-400">
+                <span>{lang === 'my' ? 'သတိပေးအဆင့်:' : 'Threshold:'}</span>
+                <select
+                  value={customThreshold === null ? 'per_item' : 'custom'}
+                  onChange={(e) => {
+                    if (e.target.value === 'per_item') {
+                      onChangeThreshold(null);
+                    } else {
+                      const val = Math.max(0, Math.floor(Number(thresholdInput) || 5));
+                      setThresholdInput(String(val));
+                      onChangeThreshold(val);
+                    }
+                  }}
+                  className="px-2 py-1 text-xs bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-md focus:outline-none focus:border-burgundy-600"
+                >
+                  <option value="per_item">
+                    {lang === 'my' ? 'ပစ္စည်းအလိုက် (Min)' : 'Per Item (Min)'}
+                  </option>
+                  <option value="custom">
+                    {lang === 'my' ? 'စုပေါင်းသတ်မှတ် ≤' : 'Global ≤'}
+                  </option>
+                </select>
+                {customThreshold !== null && (
+                  <input
+                    type="number"
+                    min={0}
+                    max={100000}
+                    value={thresholdInput}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setThresholdInput(raw);
+                      if (raw.trim() === '') return;
+                      const parsed = Number(raw);
+                      if (Number.isFinite(parsed) && parsed >= 0) {
+                        onChangeThreshold(Math.floor(parsed));
+                      }
+                    }}
+                    className="w-16 px-2 py-1 text-xs font-mono-num text-right bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-md focus:outline-none focus:border-burgundy-600"
+                  />
+                )}
+              </div>
+            )}
+            <label className="inline-flex items-center gap-2 text-xs font-medium text-titanium-700 dark:text-titanium-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={lowOnly}
+                onChange={(e) => setLowOnly(e.target.checked)}
+                className="rounded border-titanium-300 dark:border-titanium-700 accent-burgundy-700 text-burgundy-700"
+              />
+              {t('lowStockOnly')}
+            </label>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -194,12 +281,39 @@ export const StockView: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-titanium-100 dark:divide-titanium-800">
               {displayedProducts.map((p) => {
-                const isLow = p.stock <= p.minStock;
+                const isLow = isProductLowStock(p, customThreshold);
+                const threshold = getEffectiveStockThreshold(p, customThreshold);
                 return (
-                  <tr key={p.id} className="hover:bg-titanium-50/70 dark:hover:bg-titanium-800/40">
+                  <tr
+                    key={p.id}
+                    className={`hover:bg-titanium-50/70 dark:hover:bg-titanium-800/40 ${
+                      p.stock <= 0
+                        ? 'bg-red-50/35 dark:bg-red-950/15'
+                        : isLow
+                        ? 'bg-amber-50/35 dark:bg-amber-950/10'
+                        : ''
+                    }`}
+                  >
                     <td className="px-5 py-3 font-mono-num text-xs text-titanium-500 dark:text-titanium-400">{p.sku}</td>
                     <td className="px-4 py-3 font-medium text-titanium-900 dark:text-titanium-50">
-                      {p.name}
+                      <div className="flex items-center gap-2">
+                        <span>{p.name}</span>
+                        {isLow && (
+                          <span
+                            className={`px-1.5 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap ${
+                              p.stock <= 0
+                                ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/70 dark:text-red-300 dark:border-red-800/70'
+                                : 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800/70'
+                            }`}
+                          >
+                            {p.stock <= 0
+                              ? t('outOfStock')
+                              : lang === 'my'
+                              ? 'လက်ကျန်နည်း'
+                              : 'Low'}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td
                       className={`px-4 py-3 text-right font-mono-num font-bold ${
@@ -213,7 +327,7 @@ export const StockView: React.FC = () => {
                       {p.stock} {p.unit}
                     </td>
                     <td className="px-4 py-3 text-right font-mono-num text-titanium-500 dark:text-titanium-400">
-                      {p.minStock}
+                      {threshold}
                     </td>
                     <td className="px-4 py-3 text-right font-mono-num text-titanium-700 dark:text-titanium-300">
                       {formatMMK(Math.max(0, p.stock) * p.costPrice)}

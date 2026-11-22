@@ -1073,7 +1073,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(
           lang === 'my'
             ? 'Access Pass အတည်ပြုပြီးပါပြီ။ ကြိုဆိုပါသည်!'
-            : 'Access Pass activated! Welcome to ShwePOS.'
+            : 'Access Pass activated! Welcome to Lin Pos System.'
         );
         return { ok: true };
       }
@@ -1188,7 +1188,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast(
           lang === 'my'
             ? 'Access Pass အတည်ပြုပြီးပါပြီ။ ကြိုဆိုပါသည်!'
-            : 'Access Pass activated! Welcome to ShwePOS.'
+            : 'Access Pass activated! Welcome to Lin Pos System.'
         );
         return { ok: true };
       } catch (err) {
@@ -3213,7 +3213,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `ShwePOS-Backup-${getTodayISO()}.json`;
+    link.download = `Lin-Pos-System-Backup-${getTodayISO()}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

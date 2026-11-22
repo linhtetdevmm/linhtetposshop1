@@ -100,3 +100,104 @@ export function formatExpiryDate(ms: number): string {
     return '—';
   }
 }
+
+export interface RemainingTimeParts {
+  totalMs: number;
+  days: number;
+  hours: number;
+  minutes: number;
+  expired: boolean;
+}
+
+export function getRemainingTimeParts(expiresAtMs: number, nowMs = Date.now()): RemainingTimeParts {
+  if (!expiresAtMs || !Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs) {
+    return { totalMs: 0, days: 0, hours: 0, minutes: 0, expired: true };
+  }
+  const diff = expiresAtMs - nowMs;
+  const dayMs = 1000 * 60 * 60 * 24;
+  const hourMs = 1000 * 60 * 60;
+  const minuteMs = 1000 * 60;
+
+  const days = Math.floor(diff / dayMs);
+  const hours = Math.floor((diff % dayMs) / hourMs);
+  const minutes = Math.floor((diff % hourMs) / minuteMs);
+
+  return { totalMs: diff, days, hours, minutes, expired: false };
+}
+
+export function formatRemainingDetailed(
+  expiresAtMs: number,
+  lang: 'my' | 'en',
+  nowMs = Date.now(),
+  compact = false
+): string {
+  const { days, hours, minutes, expired } = getRemainingTimeParts(expiresAtMs, nowMs);
+  if (expired) {
+    return lang === 'my' ? 'သက်တမ်းကုန်ဆုံးပြီး' : 'Expired';
+  }
+
+  const safeMins = days === 0 && hours === 0 ? Math.max(1, minutes) : minutes;
+
+  if (compact) {
+    if (days > 0) {
+      return lang === 'my' ? `${days} ရက် ${hours} နာရီ` : `${days}d ${hours}h`;
+    }
+    if (hours > 0) {
+      return lang === 'my' ? `${hours} နာရီ ${safeMins} မိနစ်` : `${hours}h ${safeMins}m`;
+    }
+    return lang === 'my' ? `${safeMins} မိနစ်` : `${safeMins}m`;
+  }
+
+  if (days > 0) {
+    return lang === 'my'
+      ? `${days} ရက် ${hours} နာရီ ${safeMins} မိနစ် ကျန်`
+      : `${days}d ${hours}h ${safeMins}m left`;
+  }
+  if (hours > 0) {
+    return lang === 'my'
+      ? `${hours} နာရီ ${safeMins} မိနစ် ကျန်`
+      : `${hours}h ${safeMins}m left`;
+  }
+  return lang === 'my' ? `${safeMins} မိနစ် ကျန်` : `${safeMins}m left`;
+}
+
+export function formatExpiryDateTime(ms: number): string {
+  if (!ms || !Number.isFinite(ms)) return '—';
+  try {
+    const d = new Date(ms);
+    const datePart = d.toLocaleDateString('en-CA');
+    const timePart = d.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+    return `${datePart}, ${timePart}`;
+  } catch {
+    return '—';
+  }
+}
+
+export function getSubscriptionProgressPercent(
+  expiresAtMs: number,
+  durationDays?: number,
+  createdAtMs?: number,
+  nowMs = Date.now()
+): number {
+  if (!expiresAtMs || expiresAtMs <= nowMs) return 0;
+  const remainingMs = expiresAtMs - nowMs;
+  const dayMs = 1000 * 60 * 60 * 24;
+
+  let totalWindowMs = 0;
+  if (createdAtMs && createdAtMs > 0 && expiresAtMs > createdAtMs) {
+    totalWindowMs = expiresAtMs - createdAtMs;
+  } else if (durationDays && durationDays > 0) {
+    totalWindowMs = durationDays * dayMs;
+  } else {
+    totalWindowMs = 30 * dayMs;
+  }
+
+  if (totalWindowMs <= 0) return 100;
+  const rawPct = Math.round((remainingMs / totalWindowMs) * 100);
+  return Math.min(100, Math.max(1, rawPct));
+}
+
