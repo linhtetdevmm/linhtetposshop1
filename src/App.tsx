@@ -242,7 +242,7 @@ function PosShell() {
                   sidebarExpanded ? 'gap-3 px-3 py-2.5 text-left' : 'justify-center py-2.5 px-1'
                 } ${
                   active
-                    ? 'bg-burgundy-50 dark:bg-burgundy-950 text-burgundy-800 dark:text-burgundy-200 font-semibold ring-1 ring-burgundy-200/80 dark:ring-burgundy-800/70'
+                    ? 'bg-burgundy-50 dark:bg-burgundy-950/85 text-burgundy-800 dark:text-burgundy-200 font-semibold ring-1 ring-burgundy-200/80 dark:ring-burgundy-600/45'
                     : 'text-titanium-600 dark:text-titanium-400 hover:bg-titanium-100/80 dark:hover:bg-titanium-800/70 hover:text-titanium-900 dark:hover:text-titanium-50'
                 }`}
               >
@@ -490,7 +490,7 @@ function PosShell() {
       {/* Main Workspace Column */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Clean Contextual Top Bar (Single Row) */}
-        <header className="h-16 sticky top-0 z-30 bg-white/95 dark:bg-titanium-900/95 backdrop-blur border-b border-titanium-200 dark:border-titanium-800 px-4 sm:px-6 flex items-center justify-between gap-4">
+        <header className="h-16 sticky top-0 z-30 bg-white/95 dark:bg-titanium-900/90 backdrop-blur-md border-b border-titanium-200 dark:border-titanium-800/90 px-4 sm:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setMobileMenuOpen(true)}
@@ -531,7 +531,7 @@ function PosShell() {
             />
             <button
               onClick={() => setActiveTab('pos')}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 dark:ring-1 dark:ring-burgundy-400/30 rounded-lg transition-colors whitespace-nowrap shrink-0"
             >
               <Plus className="w-4 h-4" />
               {t('quickSale')}

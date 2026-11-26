@@ -219,9 +219,9 @@ export const AccessGateScreen: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-titanium-50 dark:bg-titanium-950 text-titanium-900 dark:text-titanium-50">
       {/* Minimal Top Utility Bar */}
-      <header className="h-16 px-4 sm:px-6 flex items-center justify-between border-b border-titanium-200 dark:border-titanium-800 bg-white/90 dark:bg-titanium-900/90 backdrop-blur">
+      <header className="h-16 px-4 sm:px-6 flex items-center justify-between border-b border-titanium-200 dark:border-titanium-800/90 bg-white/90 dark:bg-titanium-900/90 backdrop-blur-md">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-burgundy-700 dark:bg-burgundy-600 text-white flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-burgundy-700 dark:bg-burgundy-600 dark:ring-1 dark:ring-burgundy-400/30 text-white flex items-center justify-center">
             <Lock className="w-4 h-4" />
           </div>
           <div>
@@ -261,8 +261,8 @@ export const AccessGateScreen: React.FC = () => {
       </header>
 
       {/* Main Centered Gate Card */}
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
-        <div className="w-full max-w-md bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-2xl shadow-sm p-6 sm:p-8 space-y-6">
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 dark:bg-[radial-gradient(ellipse_at_top,rgba(34,78,224,0.16),transparent_65%)]">
+        <div className="w-full max-w-md bg-white dark:bg-titanium-900/95 border border-titanium-200 dark:border-titanium-800 rounded-2xl shadow-sm dark:shadow-none p-6 sm:p-8 space-y-6">
           <div className="space-y-2 text-center">
             <div
               className={`mx-auto w-12 h-12 rounded-xl border flex items-center justify-center ${

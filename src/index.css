@@ -2,37 +2,42 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  /* iPhone 18 Pro Max Deep Reddish-Brown (Burgundy Titanium) Accent Scale */
-  --color-burgundy-50: #faf3f2;
-  --color-burgundy-100: #f4e4e2;
-  --color-burgundy-200: #e9cbc8;
-  --color-burgundy-300: #e09c96;
-  --color-burgundy-400: #d47b73;
-  --color-burgundy-500: #b24c47;
-  --color-burgundy-600: #953835;
-  --color-burgundy-700: #7a2e2e;
-  --color-burgundy-800: #632222;
-  --color-burgundy-900: #4c1a1b;
-  --color-burgundy-950: #2b1414;
+  /* Deep Luminous Cobalt Blue Accent Scale (inspired by WGSN Luminous Blue) */
+  --color-burgundy-50: #eef4ff;
+  --color-burgundy-100: #dce7ff;
+  --color-burgundy-200: #bfd4ff;
+  --color-burgundy-300: #91b6ff;
+  --color-burgundy-400: #5c8eff;
+  --color-burgundy-500: #386bf6;
+  --color-burgundy-600: #224ee0;
+  --color-burgundy-700: #1738b5;
+  --color-burgundy-800: #112a8c;
+  --color-burgundy-900: #0d2069;
+  --color-burgundy-950: #0c1942;
 
-  /* Harmonious Warm Porcelain-White & Dark Espresso-Titanium Neutrals */
-  --color-titanium-50: #faf8f7;
-  --color-titanium-100: #f3eeec;
-  --color-titanium-200: #e8dfdc;
-  --color-titanium-300: #d5c7c2;
-  --color-titanium-400: #a4938e;
-  --color-titanium-500: #776661;
-  --color-titanium-600: #5c4d49;
-  --color-titanium-700: #403431;
-  --color-titanium-800: #2c2221;
-  --color-titanium-900: #1b1515;
-  --color-titanium-950: #120e0e;
+  /* Cool Architectural Slate (Light) & Midnight Sapphire-Obsidian (Dark) Neutrals */
+  --color-titanium-50: #f6f8fc;
+  --color-titanium-100: #edf1f8;
+  --color-titanium-200: #dce3ef;
+  --color-titanium-300: #c3cde0;
+  --color-titanium-400: #8c99b2;
+  --color-titanium-500: #606e88;
+  --color-titanium-600: #46536b;
+  --color-titanium-700: #2c384e;
+  --color-titanium-800: #1b253b;
+  --color-titanium-900: #101729;
+  --color-titanium-950: #080d1a;
 }
 
 @layer base {
   :root {
     --font-sans: "Plus Jakarta Sans", "Noto Sans Myanmar", ui-sans-serif, system-ui, -apple-system, sans-serif;
     --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: light;
+  }
+
+  .dark {
+    color-scheme: dark;
   }
 
   html {
@@ -66,7 +71,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Subtle warm scrollbars */
+/* Subtle cool sapphire scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -77,10 +82,18 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(122, 46, 46, 0.25);
+  background: rgba(23, 56, 181, 0.24);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(122, 46, 46, 0.45);
+  background: rgba(23, 56, 181, 0.44);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(92, 142, 255, 0.26);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(92, 142, 255, 0.48);
 }

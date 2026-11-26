@@ -227,16 +227,16 @@ export const ReportsView: React.FC = () => {
               <CartesianGrid
                 strokeDasharray="3 3"
                 vertical={false}
-                stroke={darkMode ? '#2c2221' : '#e8dfdc'}
+                stroke={darkMode ? '#1b253b' : '#dce3ef'}
               />
               <XAxis
                 dataKey="period"
-                tick={{ fontSize: 12, fill: darkMode ? '#a4938e' : '#776661' }}
+                tick={{ fontSize: 12, fill: darkMode ? '#8c99b2' : '#606e88' }}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis
-                tick={{ fontSize: 11, fill: darkMode ? '#a4938e' : '#776661' }}
+                tick={{ fontSize: 11, fill: darkMode ? '#8c99b2' : '#606e88' }}
                 axisLine={false}
                 tickLine={false}
                 tickFormatter={(v) => `${Math.round(Number(v) / 1000)}k`}
@@ -244,16 +244,16 @@ export const ReportsView: React.FC = () => {
               <Tooltip
                 formatter={(value: unknown) => formatMMK(Number(value) || 0)}
                 contentStyle={{
-                  backgroundColor: darkMode ? '#1b1515' : '#ffffff',
-                  borderColor: darkMode ? '#2c2221' : '#e8dfdc',
-                  color: darkMode ? '#faf8f7' : '#1b1515',
+                  backgroundColor: darkMode ? '#101729' : '#ffffff',
+                  borderColor: darkMode ? '#1b253b' : '#dce3ef',
+                  color: darkMode ? '#f6f8fc' : '#101729',
                   borderRadius: '8px',
                   fontSize: '12px',
                 }}
               />
-              <Bar dataKey="revenue" name={t('revenue')} fill={darkMode ? '#b24c47' : '#7a2e2e'} radius={[4, 4, 0, 0]} maxBarSize={36} />
-              <Bar dataKey="netProfit" name={t('netProfitCol')} fill={darkMode ? '#4ade80' : '#2e7d5b'} radius={[4, 4, 0, 0]} maxBarSize={36} />
-              <Bar dataKey="expenses" name={t('expensesCol')} fill={darkMode ? '#e3a05b' : '#c2783a'} radius={[4, 4, 0, 0]} maxBarSize={36} />
+              <Bar dataKey="revenue" name={t('revenue')} fill={darkMode ? '#5c8eff' : '#1738b5'} radius={[4, 4, 0, 0]} maxBarSize={36} />
+              <Bar dataKey="netProfit" name={t('netProfitCol')} fill={darkMode ? '#4ade80' : '#2f7d4e'} radius={[4, 4, 0, 0]} maxBarSize={36} />
+              <Bar dataKey="expenses" name={t('expensesCol')} fill={darkMode ? '#fb923c' : '#d95d24'} radius={[4, 4, 0, 0]} maxBarSize={36} />
             </BarChart>
           </ResponsiveContainer>
         </div>
