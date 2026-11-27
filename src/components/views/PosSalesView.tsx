@@ -38,6 +38,7 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [payMode, setPayMode] = useState<'full' | 'half' | 'partial'>('full');
   const [discount, setDiscount] = useState<string>('0');
   const [paidAmount, setPaidAmount] = useState<string>('');
   const [note, setNote] = useState('');
@@ -232,13 +233,35 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
   );
   const discountNum = Math.min(subtotal, Math.max(0, Number(discount) || 0));
   const grandTotal = Math.max(0, subtotal - discountNum);
+  const halfTotal = Math.round(grandTotal / 2);
   const effectivePaid =
-    paidAmount === ''
+    payMode === 'full'
+      ? paymentMethod === 'credit'
+        ? 0
+        : grandTotal
+      : payMode === 'half'
+      ? halfTotal
+      : paidAmount === ''
       ? paymentMethod === 'credit'
         ? 0
         : grandTotal
       : Math.max(0, Number(paidAmount) || 0);
   const diff = effectivePaid - grandTotal;
+
+  const selectPayMode = (mode: 'full' | 'half' | 'partial') => {
+    setPayMode(mode);
+    if (mode === 'full') {
+      if (paymentMethod === 'credit') setPaymentMethod('cash');
+      setPaidAmount('');
+    } else if (mode === 'half') {
+      if (paymentMethod === 'credit') setPaymentMethod('cash');
+      setPaidAmount(grandTotal > 0 ? String(halfTotal) : '');
+    } else {
+      if (paidAmount === '') {
+        setPaidAmount(paymentMethod === 'credit' ? '0' : '');
+      }
+    }
+  };
 
   const handleCheckout = async () => {
     if (cart.length === 0 || submitting) return;
@@ -266,6 +289,8 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
       setCustomerName('');
       setCustomerPhone('');
       setDiscount('0');
+      setPayMode('full');
+      if (paymentMethod === 'credit') setPaymentMethod('cash');
       setPaidAmount('');
       setNote('');
       setIncludeDelivery(false);
@@ -595,9 +620,15 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
                         key={pm}
                         type="button"
                         onClick={() => {
+                          const prevWasCredit = paymentMethod === 'credit';
                           setPaymentMethod(pm);
-                          if (pm === 'credit') setPaidAmount('0');
-                          else setPaidAmount('');
+                          if (pm === 'credit') {
+                            setPayMode('partial');
+                            setPaidAmount('0');
+                          } else if (prevWasCredit) {
+                            setPayMode('full');
+                            setPaidAmount('');
+                          }
                         }}
                         className={`px-2.5 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap ${
                           paymentMethod === pm
@@ -608,6 +639,48 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
                         {t(pm)}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* Payment Settlement Option: Pay Full / Half (50%) / Partial */}
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1.5">
+                    {t('paymentOption')}
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => selectPayMode('full')}
+                      className={`px-2.5 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap ${
+                        payMode === 'full' && paymentMethod !== 'credit'
+                          ? 'border-emerald-700 dark:border-emerald-600 bg-emerald-600 text-white shadow-xs'
+                          : 'border-titanium-200 dark:border-titanium-700 text-titanium-700 dark:text-titanium-300 hover:bg-titanium-50 dark:hover:bg-titanium-800'
+                      }`}
+                    >
+                      {t('payFull')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => selectPayMode('half')}
+                      className={`px-2.5 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap ${
+                        payMode === 'half'
+                          ? 'border-burgundy-700 dark:border-burgundy-600 bg-burgundy-700 dark:bg-burgundy-600 text-white shadow-xs'
+                          : 'border-titanium-200 dark:border-titanium-700 text-titanium-700 dark:text-titanium-300 hover:bg-titanium-50 dark:hover:bg-titanium-800'
+                      }`}
+                    >
+                      {t('payHalf')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => selectPayMode('partial')}
+                      className={`px-2.5 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap ${
+                        payMode === 'partial'
+                          ? 'border-amber-600 dark:border-amber-500 bg-amber-600 text-white shadow-xs'
+                          : 'border-titanium-200 dark:border-titanium-700 text-titanium-700 dark:text-titanium-300 hover:bg-titanium-50 dark:hover:bg-titanium-800'
+                      }`}
+                    >
+                      {t('payPartial')}
+                    </button>
                   </div>
                 </div>
 
@@ -626,14 +699,44 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
-                      {t('paidAmount')}
-                    </label>
+                    <div className="flex items-center justify-between gap-1 mb-1">
+                      <label className="block text-xs text-titanium-500 dark:text-titanium-400 truncate">
+                        {t('paidAmount')}
+                      </label>
+                      {payMode !== 'full' && grandTotal > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => selectPayMode('full')}
+                          className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline whitespace-nowrap shrink-0"
+                        >
+                          {t('payFull')}
+                        </button>
+                      )}
+                    </div>
                     <input
                       type="number"
                       min={0}
-                      value={paidAmount}
-                      onChange={(e) => setPaidAmount(e.target.value)}
+                      value={
+                        payMode === 'half'
+                          ? grandTotal > 0
+                            ? String(halfTotal)
+                            : ''
+                          : paidAmount
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPaidAmount(val);
+                        if (val === '') {
+                          setPayMode(paymentMethod === 'credit' ? 'partial' : 'full');
+                        } else {
+                          const num = Math.max(0, Number(val) || 0);
+                          if (grandTotal > 0 && num === grandTotal && paymentMethod !== 'credit') {
+                            setPayMode('full');
+                          } else {
+                            setPayMode('partial');
+                          }
+                        }
+                      }}
                       placeholder={String(grandTotal)}
                       className="w-full px-3 py-1.5 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
                     />
@@ -694,6 +797,16 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
                       {formatMMK(grandTotal)}
                     </span>
                   </div>
+                  {cart.length > 0 && effectivePaid < grandTotal && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-titanium-500 dark:text-titanium-400">
+                        {t('paidAmount')}
+                      </span>
+                      <span className="font-mono-num font-semibold text-burgundy-700 dark:text-burgundy-300">
+                        {formatMMK(effectivePaid)}
+                      </span>
+                    </div>
+                  )}
                   {cart.length > 0 && (
                     <div className="flex justify-between text-xs">
                       <span className="text-titanium-500 dark:text-titanium-400">
@@ -1021,7 +1134,28 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('paidAmount')}</label>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <label className="block text-xs text-titanium-500 dark:text-titanium-400">{t('paidAmount')}</label>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setEditPaidAmount(String(Math.round(editTotal / 2)))}
+                        className="text-[11px] font-semibold text-burgundy-700 dark:text-burgundy-300 hover:underline whitespace-nowrap"
+                      >
+                        50%
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (editPaymentMethod === 'credit') setEditPaymentMethod('cash');
+                          setEditPaidAmount(String(editTotal));
+                        }}
+                        className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline whitespace-nowrap"
+                      >
+                        {t('payFull')}
+                      </button>
+                    </div>
+                  </div>
                   <input
                     type="number"
                     min={0}

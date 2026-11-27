@@ -283,13 +283,11 @@ service cloud.firestore {
     match /accessPasses/{passCode} {
       allow get: if isValidPassCode(passCode) && (
         isAdmin() ||
-        (isVerified() && (
-          !('assignedUid' in resource.data) ||
-          resource.data.assignedUid == '' ||
-          resource.data.assignedUid == request.auth.uid
-        ))
+        (isVerified()
+          && (!('assignedUid' in resource.data) || resource.data.assignedUid == '' || resource.data.assignedUid == request.auth.uid)
+          && (!('assignedEmail' in resource.data) || resource.data.assignedEmail == '' || resource.data.assignedEmail == request.auth.token.email))
       );
-      allow list: if isPrimaryAdmin();
+      allow list: if isPrimaryAdmin() || (isVerified() && resource.data.assignedEmail == request.auth.token.email);
 
       allow create: if isAdmin()
         && isValidPassCode(passCode)
@@ -312,6 +310,7 @@ service cloud.firestore {
             && existing().status == 'active'
             && isNotExpiredDoc(existing())
             && (!('assignedUid' in existing()) || existing().assignedUid == '' || existing().assignedUid == request.auth.uid)
+            && (!('assignedEmail' in existing()) || existing().assignedEmail == '' || existing().assignedEmail == request.auth.token.email)
             && incoming().assignedUid == request.auth.uid
             && incoming().assignedEmail == request.auth.token.email
             && incoming().boundDevices.size() >= 1

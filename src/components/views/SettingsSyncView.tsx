@@ -735,6 +735,56 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
               </div>
             </div>
           </form>
+
+          {/* Tenant & Shop Backup & Restore Card (Available to All Renters & Admin) */}
+          <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-base font-semibold text-titanium-900 dark:text-titanium-50">
+                  {t('backupTitle')}
+                </h3>
+                <p className="text-xs text-titanium-500 dark:text-titanium-400 mt-0.5 leading-relaxed">
+                  {lang === 'my'
+                    ? 'မိမိဆိုင်၏ ဒေတာအားလုံး (ပစ္စည်း၊ အရောင်း၊ အဝယ်၊ Stock၊ အကြွေး၊ ကုန်ကျစရိတ်၊ ပို့ဆောင်ရေး) ကို JSON ဖိုင်ဖြင့် ကိုယ်တိုင် Backup သိမ်းဆည်းပြီး အချိန်မရွေး ပြန်လည် Restore လုပ်နိုင်ပါသည်။'
+                    : 'Export a complete JSON backup of your own shop records (products, sales, purchases, stock, debts, expenses, deliveries) or restore an earlier backup anytime.'}
+                </p>
+              </div>
+              <span className="text-[11px] font-mono-num px-2.5 py-1 rounded-md bg-burgundy-50 dark:bg-burgundy-950/60 text-burgundy-800 dark:text-burgundy-200 border border-burgundy-200/80 dark:border-burgundy-800/70">
+                {shop.shopName} · {products.length} {lang === 'my' ? 'မျိုး' : 'items'} · {sales.length} {lang === 'my' ? 'ဘောင်ချာ' : 'sales'}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={exportBackupJson}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors whitespace-nowrap"
+              >
+                <Download className="w-3.5 h-3.5" />
+                {t('exportBackup')}
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={busyAction === 'restore'}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-titanium-700 dark:text-titanium-200 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200 dark:hover:bg-titanium-700 disabled:opacity-50 rounded-lg transition-colors whitespace-nowrap"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                {busyAction === 'restore'
+                  ? lang === 'my'
+                    ? 'Restore လုပ်နေသည်...'
+                    : 'Restoring...'
+                  : t('importBackup')}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/json,.json"
+                onChange={handleRestoreFile}
+                className="hidden"
+              />
+            </div>
+          </div>
         </div>
       )}
 

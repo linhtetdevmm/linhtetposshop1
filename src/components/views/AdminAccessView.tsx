@@ -6,6 +6,8 @@ import {
   Copy,
   Edit3,
   ExternalLink,
+  Eye,
+  EyeOff,
   KeyRound,
   Link2,
   RefreshCw,
@@ -16,6 +18,7 @@ import {
   Smartphone,
   Store,
   Trash2,
+  UserPlus,
   UserX,
   Users,
   X,
@@ -33,6 +36,7 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
 import {
+  adminCreateSupabaseUserAndBindPass,
   createSupabaseAccessPass,
   deleteSupabaseAccessPass,
   fetchSupabaseAdminData,
@@ -118,6 +122,10 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
   const [loading, setLoading] = useState(true);
 
   // Generator form state
+  const [provisionMode, setProvisionMode] = useState<'account_and_key' | 'key_only'>('account_and_key');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerPassword, setCustomerPassword] = useState('');
+  const [showCustomerPassword, setShowCustomerPassword] = useState(false);
   const [label, setLabel] = useState('');
   const [note, setNote] = useState('');
   const [passCode, setPassCode] = useState(() => generateRandomPassCode('LIN'));
@@ -132,6 +140,11 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
   const [maxDevices, setMaxDevices] = useState<number>(1);
   const [creating, setCreating] = useState(false);
   const [lastCreatedPass, setLastCreatedPass] = useState<AccessPass | null>(null);
+  const [lastCreatedCredentials, setLastCreatedCredentials] = useState<{
+    email: string;
+    password: string;
+    needsEmailConfirm?: boolean;
+  } | null>(null);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -340,25 +353,58 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
     showToast(text, 'info');
   };
 
-  const buildShareInvite = (p: AccessPass) => {
+  const generateTempPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    const bytes = new Uint8Array(10);
+    crypto.getRandomValues(bytes);
+    const pwd = Array.from(bytes, (b) => chars[b % chars.length]).join('');
+    setCustomerPassword(pwd);
+    setShowCustomerPassword(true);
+  };
+
+  const buildShareInvite = (
+    p: AccessPass,
+    creds?: { email: string; password: string } | null
+  ) => {
     const baseUrl = normalizeShareUrl(shareWebUrl);
-    const directUrl = `${baseUrl}/?pass=${encodeURIComponent(p.code)}`;
+    const directUrl = creds
+      ? baseUrl
+      : `${baseUrl}/?pass=${encodeURIComponent(p.code)}`;
     const expStr = formatExpiryDate(p.expiresAtMs);
+    if (creds) {
+      return [
+        `Lin Pos System — Account & License (${p.label})`,
+        `Web Link: ${directUrl}`,
+        `Email: ${creds.email}`,
+        `Password: ${creds.password}`,
+        `Bound Key: ${p.code}`,
+        `Valid Until: ${expStr} (${p.maxDevices} Device${p.maxDevices > 1 ? 's' : ''})`,
+        `အထက်ပါ Web Link ကိုဖွင့်ပြီး Email နှင့် Password ဖြင့် တိုက်ရိုက်ဝင်ရောက်အသုံးပြုနိုင်ပါသည်။`,
+      ].join('\n');
+    }
     return [
       `Lin Pos System — Access Pass (${p.label})`,
       `Web Link: ${directUrl}`,
+      p.assignedEmail ? `Bound Email: ${p.assignedEmail}` : null,
       `Access Pass: ${p.code}`,
       `Valid Until: ${expStr} (${p.maxDevices} Device${p.maxDevices > 1 ? 's' : ''})`,
-      isSupabaseMode
-        ? `အထက်ပါ Link ကို နှိပ်ပြီး Email + Password ဖြင့် အကောင့်ဝင်/ဖွင့်ကာ Access Pass ကို အတည်ပြုအသုံးပြုနိုင်ပါသည်။`
+      p.assignedEmail
+        ? `အထက်ပါ Link ကို နှိပ်ပြီး ${p.assignedEmail} ဖြင့် ဝင်ရောက်လိုက်ရုံဖြင့် Key နှင့် တိုက်ရိုက်ချိတ်ဆက်ပေးပါမည်။`
         : `အထက်ပါ Link ကို နှိပ်ပြီး အကောင့်ဝင်ကာ Access Pass ကို ထည့်သွင်းအသုံးပြုနိုင်ပါသည်။`,
-    ].join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
   };
 
-  const shareInvite = async (p: AccessPass) => {
-    const text = buildShareInvite(p);
+  const shareInvite = async (
+    p: AccessPass,
+    creds?: { email: string; password: string } | null
+  ) => {
+    const text = buildShareInvite(p, creds);
     const baseUrl = normalizeShareUrl(shareWebUrl);
-    const directUrl = `${baseUrl}/?pass=${encodeURIComponent(p.code)}`;
+    const directUrl = creds
+      ? baseUrl
+      : `${baseUrl}/?pass=${encodeURIComponent(p.code)}`;
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
         await navigator.share({
@@ -390,6 +436,37 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
       return;
     }
 
+    const cleanEmail = customerEmail.trim().toLowerCase();
+    const creatingSupabaseAccount = isSupabaseMode && provisionMode === 'account_and_key';
+    if (creatingSupabaseAccount) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        showToast(
+          lang === 'my'
+            ? 'Customer Email မှန်ကန်စွာ ထည့်သွင်းပေးပါ။'
+            : 'Please enter a valid customer email address.',
+          'error'
+        );
+        return;
+      }
+      if (customerPassword.length < 6) {
+        showToast(
+          lang === 'my'
+            ? 'Password အနည်းဆုံး ၆ လုံး ထည့်သွင်းပေးပါ။'
+            : 'Password must be at least 6 characters.',
+          'error'
+        );
+        return;
+      }
+    } else if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      showToast(
+        lang === 'my'
+          ? 'Email/Gmail ပုံစံ မမှန်ကန်ပါ။'
+          : 'Please enter a valid Email/Gmail address.',
+        'error'
+      );
+      return;
+    }
+
     let expiresMs: number;
     let calcDays: number;
     if (durationMode === 'custom') {
@@ -414,6 +491,55 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
       const safeNote = clampString(note, 240);
       const safeMaxDev = clampNumber(maxDevices, 1, 50);
 
+      if (creatingSupabaseAccount) {
+        const res = await adminCreateSupabaseUserAndBindPass({
+          email: cleanEmail,
+          password: customerPassword,
+          label: safeLabel,
+          note: safeNote,
+          passCode: cleanCode,
+          durationDays: calcDays,
+          expiresAtMs: expiresMs,
+          maxDevices: safeMaxDev,
+          createdBy: user.uid,
+        });
+        if (!res.ok) {
+          showToast(res.error || 'Failed to create customer account', 'error');
+          return;
+        }
+        await reloadSupabaseAdmin();
+        const created: AccessPass = {
+          code: cleanCode,
+          label: safeLabel,
+          note: safeNote,
+          status: 'active',
+          durationDays: calcDays,
+          expiresAtMs: expiresMs,
+          maxDevices: safeMaxDev,
+          boundDevices: [],
+          assignedUid: res.userId || '',
+          assignedEmail: cleanEmail,
+          createdBy: user.uid,
+        };
+        setLastCreatedPass(created);
+        setLastCreatedCredentials({
+          email: cleanEmail,
+          password: customerPassword,
+          needsEmailConfirm: res.needsEmailConfirm,
+        });
+        setCustomerEmail('');
+        setCustomerPassword('');
+        setLabel('');
+        setNote('');
+        setPassCode(generateRandomPassCode('LIN'));
+        showToast(
+          lang === 'my'
+            ? `အကောင့် (${cleanEmail}) ဖွင့်ပြီး Key (${cleanCode}) နှင့် တိုက်ရိုက်ချိတ်ဆက်ပေးပြီးပါပြီ။`
+            : `Account ${cleanEmail} created and bound to Key ${cleanCode}.`
+        );
+        return;
+      }
+
       if (isSupabaseMode) {
         const res = await createSupabaseAccessPass({
           code: cleanCode,
@@ -423,6 +549,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
           expiresAtMs: expiresMs,
           maxDevices: safeMaxDev,
           createdBy: user.uid,
+          assignedEmail: cleanEmail || undefined,
         });
         if (!res.ok) {
           showToast(res.error || 'Supabase error creating pass', 'error');
@@ -442,7 +569,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
           maxDevices: safeMaxDev,
           boundDevices: [],
           assignedUid: '',
-          assignedEmail: '',
+          assignedEmail: clampString(cleanEmail, 160),
           createdBy: user.uid,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -459,15 +586,21 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
         maxDevices: safeMaxDev,
         boundDevices: [],
         assignedUid: '',
-        assignedEmail: '',
+        assignedEmail: cleanEmail,
         createdBy: user.uid,
       };
       setLastCreatedPass(created);
+      setLastCreatedCredentials(null);
+      setCustomerEmail('');
       setLabel('');
       setNote('');
       setPassCode(generateRandomPassCode('LIN'));
       showToast(
-        lang === 'my'
+        cleanEmail
+          ? lang === 'my'
+            ? `Pass (${cleanCode}) ကို ${cleanEmail} နှင့် ချိတ်ဆက်ထုတ်ပေးပြီးပါပြီ။`
+            : `Access Pass ${cleanCode} created and bound to ${cleanEmail}.`
+          : lang === 'my'
           ? `Random Pass (${cleanCode}) ထုတ်ပေးပြီးပါပြီ။`
           : `Access Pass ${cleanCode} created.`
       );
@@ -956,16 +1089,127 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
       {/* TAB 1: RANDOM PASS GENERATOR & MANAGEMENT */}
       {subTab === 'passes' && (
         <div className="space-y-6">
-          {/* Create Pass Form */}
+          {/* Create Account & Bind Key / Generate Pass Form */}
           <form
             onSubmit={handleCreatePass}
             className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5 space-y-4"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">
-                {lang === 'my' ? 'Random Access Pass အသစ် ထုတ်ပေးမည်' : 'Generate New Random Access Pass'}
-              </h3>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-4 h-4 text-burgundy-700 dark:text-burgundy-300" />
+                <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">
+                  {isSupabaseMode
+                    ? provisionMode === 'account_and_key'
+                      ? lang === 'my'
+                        ? 'အကောင့်အသစ်ဖွင့်ပြီး Key နှင့် တန်းချိတ်ပေးမည်'
+                        : 'Create Customer Account & Bind Key'
+                      : lang === 'my'
+                      ? 'Random Access Pass အသစ် ထုတ်ပေးမည်'
+                      : 'Generate New Random Access Pass'
+                    : lang === 'my'
+                    ? 'Random Access Pass ထုတ်ပေးမည် (Gmail နှင့် တန်းချိတ်နိုင်သည်)'
+                    : 'Generate Access Pass & Bind Gmail'}
+                </h3>
+              </div>
+
+              {isSupabaseMode && (
+                <div className="inline-flex gap-1 p-1 rounded-lg bg-titanium-100 dark:bg-titanium-800 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setProvisionMode('account_and_key')}
+                    className={`px-3 py-1 rounded-md font-medium transition-colors whitespace-nowrap ${
+                      provisionMode === 'account_and_key'
+                        ? 'bg-white dark:bg-titanium-900 text-burgundy-800 dark:text-burgundy-200 shadow-xs'
+                        : 'text-titanium-600 dark:text-titanium-400'
+                    }`}
+                  >
+                    {lang === 'my' ? 'အကောင့် + Key တန်းချိတ်' : 'Account + Key'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProvisionMode('key_only')}
+                    className={`px-3 py-1 rounded-md font-medium transition-colors whitespace-nowrap ${
+                      provisionMode === 'key_only'
+                        ? 'bg-white dark:bg-titanium-900 text-burgundy-800 dark:text-burgundy-200 shadow-xs'
+                        : 'text-titanium-600 dark:text-titanium-400'
+                    }`}
+                  >
+                    {lang === 'my' ? 'Key သီးသန့်' : 'Key Only'}
+                  </button>
+                </div>
+              )}
             </div>
+
+            {/* Customer Credentials / Direct Email Binding Row */}
+            {isSupabaseMode && provisionMode === 'account_and_key' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3.5 rounded-xl bg-burgundy-50/50 dark:bg-burgundy-950/25 border border-burgundy-200/70 dark:border-burgundy-900/60">
+                <div>
+                  <label className="block text-xs font-medium text-titanium-700 dark:text-titanium-300 mb-1">
+                    {lang === 'my' ? 'Customer Email (ဝင်ရောက်မည့် အကောင့်) *' : 'Customer Email *'}
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={customerEmail}
+                    onChange={(e) => setCustomerEmail(e.target.value)}
+                    placeholder="customer@gmail.com"
+                    className="w-full px-3 py-2 text-sm bg-white dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-titanium-700 dark:text-titanium-300 mb-1">
+                    {lang === 'my' ? 'Password (အနည်းဆုံး ၆ လုံး) *' : 'Customer Password (min 6 chars) *'}
+                  </label>
+                  <div className="flex gap-1.5">
+                    <div className="relative flex-1">
+                      <input
+                        type={showCustomerPassword ? 'text' : 'password'}
+                        required
+                        minLength={6}
+                        value={customerPassword}
+                        onChange={(e) => setCustomerPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full pl-3 pr-9 py-2 text-sm font-mono-num bg-white dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomerPassword((v) => !v)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-titanium-500 hover:text-titanium-800 dark:hover:text-titanium-200"
+                        aria-label="Toggle password visibility"
+                      >
+                        {showCustomerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={generateTempPassword}
+                      className="px-3 py-2 text-xs font-medium bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-700 hover:border-burgundy-500 rounded-lg text-titanium-700 dark:text-titanium-200 whitespace-nowrap"
+                    >
+                      {lang === 'my' ? 'Auto ထုတ်' : 'Generate'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-medium text-titanium-600 dark:text-titanium-400 mb-1">
+                  {lang === 'my'
+                    ? 'Customer Gmail / Email နှင့် တိုက်ရိုက်ချိတ်မည် (ချန်လှပ်ထားနိုင်)'
+                    : 'Bind Directly to Customer Gmail (Optional)'}
+                </label>
+                <input
+                  type="email"
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
+                  placeholder={
+                    lang === 'my'
+                      ? 'ဥပမာ - shopowner@gmail.com (ထည့်ထားလျှင် ထို Gmail ဝင်သည်နှင့် Key တန်းပွင့်ပါမည်)'
+                      : 'e.g. shopowner@gmail.com (auto-unlocks when this Gmail signs in)'
+                  }
+                  className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
@@ -1099,9 +1343,17 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
                 disabled={creating}
                 className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-50 rounded-lg transition-colors whitespace-nowrap"
               >
-                <KeyRound className="w-4 h-4" />
+                {isSupabaseMode && provisionMode === 'account_and_key' ? (
+                  <UserPlus className="w-4 h-4" />
+                ) : (
+                  <KeyRound className="w-4 h-4" />
+                )}
                 {creating
                   ? '...'
+                  : isSupabaseMode && provisionMode === 'account_and_key'
+                  ? lang === 'my'
+                    ? 'အကောင့်ဖွင့်ပြီး Key တန်းချိတ်မည်'
+                    : 'Create Account & Bind Key'
                   : lang === 'my'
                   ? 'Random Pass ထုတ်ပေးမည်'
                   : 'Create Random Pass'}
@@ -1155,17 +1407,37 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
               </p>
             </div>
 
-            {/* Instant Copy Bar for Newly Generated Pass */}
+            {/* Instant Copy Bar for Newly Created Account / Pass */}
             {lastCreatedPass && (
               <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/35 border border-emerald-200 dark:border-emerald-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="min-w-0">
+                <div className="min-w-0 space-y-0.5">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    {lang === 'my' ? 'Pass အသစ် အဆင်သင့်ဖြစ်ပါပြီ:' : 'New Pass Ready:'}{' '}
+                    {lastCreatedCredentials
+                      ? lang === 'my'
+                        ? 'အကောင့်အသစ်နှင့် Key ချိတ်ဆက်ပြီးပါပြီ:'
+                        : 'Account & Bound Key Ready:'
+                      : lang === 'my'
+                      ? 'Pass အသစ် အဆင်သင့်ဖြစ်ပါပြီ:'
+                      : 'New Pass Ready:'}{' '}
                     <span className="font-mono-num">{lastCreatedPass.code}</span>
                   </div>
-                  <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
-                    {lastCreatedPass.label} · {lang === 'my' ? 'သက်တမ်းကုန်ရက်' : 'Expires'}:{' '}
+                  {lastCreatedCredentials && (
+                    <div className="text-[11px] font-mono-num text-emerald-800 dark:text-emerald-200">
+                      Email: {lastCreatedCredentials.email} · Password: {lastCreatedCredentials.password}
+                      {lastCreatedCredentials.needsEmailConfirm
+                        ? lang === 'my'
+                          ? ' (Email Confirm လိုအပ်နိုင်ပါသည်)'
+                          : ' (Confirm email if enabled)'
+                        : ''}
+                    </div>
+                  )}
+                  <div className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                    {lastCreatedPass.label}
+                    {lastCreatedPass.assignedEmail && !lastCreatedCredentials
+                      ? ` · Bound Gmail: ${lastCreatedPass.assignedEmail}`
+                      : ''}{' '}
+                    · {lang === 'my' ? 'သက်တမ်းကုန်ရက်' : 'Expires'}:{' '}
                     {formatExpiryDate(lastCreatedPass.expiresAtMs)} · {lastCreatedPass.maxDevices} Device(s)
                   </div>
                 </div>
@@ -1179,7 +1451,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
                         'Pass code copied.'
                       )
                     }
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white dark:bg-titanium-900 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 rounded-lg"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white dark:bg-titanium-900 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 rounded-lg whitespace-nowrap"
                   >
                     <Copy className="w-3.5 h-3.5" />
                     {lang === 'my' ? 'ကုဒ်ကူးမည်' : 'Copy Code'}
@@ -1188,20 +1460,26 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
                     type="button"
                     onClick={() =>
                       copyText(
-                        buildShareInvite(lastCreatedPass),
+                        buildShareInvite(lastCreatedPass, lastCreatedCredentials),
                         'Viber/Telegram ပို့ရန် စာသား Copy ကူးပြီးပါပြီ။',
                         'Full invite message copied.'
                       )
                     }
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg whitespace-nowrap"
                   >
                     <Copy className="w-3.5 h-3.5" />
-                    {lang === 'my' ? 'ဖိတ်စာအပြည့် Copy' : 'Copy Invite'}
+                    {lastCreatedCredentials
+                      ? lang === 'my'
+                        ? 'Login + Key Copy'
+                        : 'Copy Login + Key'
+                      : lang === 'my'
+                      ? 'ဖိတ်စာအပြည့် Copy'
+                      : 'Copy Invite'}
                   </button>
                   <button
                     type="button"
-                    onClick={() => shareInvite(lastCreatedPass)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-burgundy-700 hover:bg-burgundy-800 text-white rounded-lg"
+                    onClick={() => shareInvite(lastCreatedPass, lastCreatedCredentials)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-burgundy-700 hover:bg-burgundy-800 text-white rounded-lg whitespace-nowrap"
                   >
                     <Share2 className="w-3.5 h-3.5" />
                     {lang === 'my' ? 'Share' : 'Share'}

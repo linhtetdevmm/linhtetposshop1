@@ -19,7 +19,7 @@ export const ProductsView: React.FC = () => {
 
   const [sku, setSku] = useState('');
   const [name, setName] = useState('');
-  const [category, setCategory] = useState('Groceries');
+  const [category, setCategory] = useState('');
   const [unit, setUnit] = useState('pcs');
   const [costPrice, setCostPrice] = useState<string>('0');
   const [marginPercent, setMarginPercent] = useState<string>(
@@ -33,7 +33,7 @@ export const ProductsView: React.FC = () => {
     setEditingId(undefined);
     setSku(`SKU-${Math.floor(100 + Math.random() * 900)}`);
     setName('');
-    setCategory('Groceries');
+    setCategory('');
     setUnit('pcs');
     setCostPrice('10000');
     const defMargin = shop.defaultMarginPercent || 25;
@@ -263,10 +263,10 @@ export const ProductsView: React.FC = () => {
                 <div>
                   <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('category')}</label>
                   <input
-                    required
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                    placeholder="Groceries"
+                    className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg placeholder:text-titanium-400/75 dark:placeholder:text-titanium-500 focus:outline-none focus:border-burgundy-600"
                   />
                 </div>
                 <div>

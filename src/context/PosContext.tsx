@@ -14,6 +14,7 @@ import {
   doc,
   getDoc,
   getDocFromServer,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
@@ -406,6 +407,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [authError, setAuthError] = useState<string | null>(null);
   const signingInRef = useRef(false);
   const shopDocReadyRef = useRef<string | null>(null);
+  const autoClaimAttemptedRef = useRef<string | null>(null);
   const [isSecondaryAdmin, setIsSecondaryAdmin] = useState(false);
   const [licenseReady, setLicenseReady] = useState(false);
   const [activeLicense, setActiveLicense] = useState<UserLicense | null>(null);
@@ -712,6 +714,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!authReady) return;
     if (!user) {
       shopDocReadyRef.current = null;
+      autoClaimAttemptedRef.current = null;
       setIsSecondaryAdmin(false);
       setActiveLicense(null);
       setActivePass(null);
@@ -1124,6 +1127,19 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
         }
 
+        const existingAssignedEmail =
+          typeof p.assignedEmail === 'string' ? p.assignedEmail.trim().toLowerCase() : '';
+        const currentEmailLower = (user.email || '').trim().toLowerCase();
+        if (existingAssignedEmail && currentEmailLower && existingAssignedEmail !== currentEmailLower) {
+          return {
+            ok: false,
+            error:
+              lang === 'my'
+                ? 'ဤ Pass ကို အခြား Gmail အကောင့်တစ်ခုအတွက် သီးသန့်ချိတ်ဆက်ထားပါသည်။'
+                : 'This Access Pass is reserved for a different Gmail account.',
+          };
+        }
+
         const maxDevices = Number(p.maxDevices || 1);
         const existingDevices: string[] = Array.isArray(p.boundDevices)
           ? p.boundDevices.map(String)
@@ -1212,6 +1228,39 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     },
     [user, deviceId, lang, showToast, refreshSubscriptionStatus]
   );
+
+  // Auto-claim Firebase pass pre-assigned by Admin to the signed-in Gmail
+  useEffect(() => {
+    if (!authReady || !user || user.provider !== 'firebase' || isAdmin) return;
+    if (!licenseReady || activeLicense || !user.email) return;
+    if (autoClaimAttemptedRef.current === user.uid) return;
+
+    autoClaimAttemptedRef.current = user.uid;
+    const emailLower = user.email.trim().toLowerCase();
+    let cancelled = false;
+
+    getDocs(query(collection(db, 'accessPasses'), where('assignedEmail', '==', emailLower)))
+      .then((snap) => {
+        if (cancelled || snap.empty) return;
+        const match = snap.docs.find((d) => {
+          const data = d.data();
+          const expMs = resolveSubscriptionExpiryMs(data);
+          const uid = typeof data.assignedUid === 'string' ? data.assignedUid : '';
+          return data.status === 'active' && expMs > Date.now() && (!uid || uid === user.uid);
+        });
+        if (match) {
+          const code = typeof match.data().code === 'string' ? match.data().code : match.id;
+          void redeemAccessPass(code);
+        }
+      })
+      .catch(() => {
+        // Ignore auto-claim query errors; user can still enter pass manually
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, user, isAdmin, licenseReady, activeLicense, redeemAccessPass]);
 
   // Cloud POS data loader (Supabase PostgreSQL OR Firestore real-time listeners)
   useEffect(() => {
@@ -1364,18 +1413,18 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const raw = res.error || '';
           const friendly = raw.toLowerCase().includes('invalid login credentials')
             ? lang === 'my'
-              ? 'Email သို့မဟုတ် Password မှားနေပါသည်။ ပထမဆုံးအကြိမ် ဝင်ခြင်းဖြစ်ပါက "အကောင့်သစ်ဖွင့်မည်" Tab ကို နှိပ်ပြီး အကောင့်တစ်ကြိမ် ဖွင့်ဝင်ပါ။'
-              : 'Invalid email or password. If this is your first time using Supabase login, switch to "Create Account" once to register.'
+              ? 'Email သို့မဟုတ် Password မှားနေပါသည်။ Admin ဖွင့်ပေးထားသော အကောင့်အချက်အလက်ကို ပြန်လည်စစ်ဆေးပါ။'
+              : 'Invalid email or password. Please check the account credentials provided by Admin.'
             : raw.toLowerCase().includes('email not confirmed')
             ? lang === 'my'
-              ? 'သင့် Email ကို အတည်ပြုရန် Inbox ထဲမှ Confirm Link ကို နှိပ်ပေးပါ (သို့မဟုတ် Supabase Auth Settings တွင် Confirm Email ကို ပိတ်ထားပါ)။'
-              : 'Email not confirmed yet. Check your inbox or disable Confirm Email in Supabase Auth settings.'
+              ? 'သင့် Email ကို အတည်ပြုရန် Inbox ထဲမှ Confirm Link ကို နှိပ်ပေးပါ (သို့မဟုတ် Admin ထံ ဆက်သွယ်ပါ)။'
+              : 'Email not confirmed yet. Check your inbox or contact Admin.'
             : raw || (lang === 'my' ? 'ဝင်ရောက်မှု မအောင်မြင်ပါ။' : 'Sign-in failed.');
           setAuthError(friendly);
           return { ok: false, error: friendly };
         }
         showToast(
-          lang === 'my' ? 'Supabase အကောင့်ဖြင့် ဝင်ရောက်ပြီးပါပြီ။' : 'Signed in with Supabase.'
+          lang === 'my' ? 'အကောင့်ဖြင့် ဝင်ရောက်ပြီးပါပြီ။' : 'Signed in successfully.'
         );
         return { ok: true };
       } finally {
@@ -2023,7 +2072,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             courierName: clampString(payload.createDelivery.courierName, 80, 'Shop Rider'),
             deliveryFee: clampNumber(payload.createDelivery.deliveryFee, 0),
             codAmount:
-              payload.paymentMethod === 'credit'
+              remainingDebt > 0
                 ? remainingDebt + clampNumber(payload.createDelivery.deliveryFee, 0)
                 : 0,
             status: 'pending',
@@ -2137,7 +2186,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             courierName: clampString(payload.createDelivery.courierName, 80, 'Shop Rider'),
             deliveryFee: clampNumber(payload.createDelivery.deliveryFee, 0),
             codAmount:
-              payload.paymentMethod === 'credit'
+              remainingDebt > 0
                 ? remainingDebt + clampNumber(payload.createDelivery.deliveryFee, 0)
                 : 0,
             status: 'pending',
@@ -3229,6 +3278,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return;
       }
 
+      const nextShopTelegramToken = clampString(backup.shop.telegramBotToken, 200);
+      const nextShopTelegramChatId = clampString(backup.shop.telegramChatId, 100);
+      if (nextShopTelegramToken || nextShopTelegramChatId) {
+        saveShopTelegramPrefs(uid, {
+          botToken: nextShopTelegramToken,
+          chatId: nextShopTelegramChatId,
+          enabled: Boolean(backup.shop.telegramEnabled),
+        });
+      }
+
       if (!user) {
         setShop({ ...backup.shop, ownerId: uid, currency: 'MMK' });
         setProducts(backup.products.map((p) => ({ ...p, ownerId: uid })));
@@ -3285,7 +3344,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         await ensureShopDoc(uid, user.displayName);
         await updateDoc(doc(db, 'shops', uid), {
-          shopName: clampString(backup.shop.shopName, 120, 'My Shop'),
+          shopName: clampString(backup.shop.shopName, 120, 'My Shop') || 'My Shop',
           shopSubtitle: clampString(backup.shop.shopSubtitle, 160),
           phone: clampString(backup.shop.phone, 40),
           address: clampString(backup.shop.address, 240),
@@ -3295,33 +3354,221 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           updatedAt: serverTimestamp(),
         });
 
-        const batch = writeBatch(db);
-        const writeCollection = <T extends { id: string }>(
-          col: string,
-          list: T[] | undefined,
-          includeUpdated = true
-        ) => {
-          (list || []).slice(0, 60).forEach((item) => {
-            const { id, ...rest } = item;
-            const docId = sanitizeId(id || generateDocId(col));
-            batch.set(doc(db, 'shops', uid, col, docId), {
-              ...rest,
-              ownerId: uid,
-              createdAt: serverTimestamp(),
-              ...(includeUpdated ? { updatedAt: serverTimestamp() } : {}),
-            });
-          });
+        type QueuedOp = {
+          kind: 'set' | 'update';
+          ref: ReturnType<typeof doc>;
+          data: Record<string, unknown>;
+        };
+        const ops: QueuedOp[] = [];
+
+        const fetchExistingMap = async (colName: string) => {
+          const snap = await getDocs(
+            query(collection(db, 'shops', uid, colName), where('ownerId', '==', uid))
+          );
+          const map = new Map<string, Record<string, unknown>>();
+          snap.docs.forEach((d) => map.set(d.id, d.data() as Record<string, unknown>));
+          return map;
         };
 
-        writeCollection('products', backup.products);
-        writeCollection('sales', backup.sales);
-        writeCollection('purchases', backup.purchases);
-        writeCollection('stockLogs', backup.stockLogs, false);
-        writeCollection('debts', backup.debts);
-        writeCollection('expenses', backup.expenses);
-        writeCollection('deliveries', backup.deliveries);
+        const [
+          existingProducts,
+          existingSales,
+          existingPurchases,
+          existingLogs,
+          existingDebts,
+          existingExpenses,
+          existingDeliveries,
+        ] = await Promise.all([
+          fetchExistingMap('products'),
+          fetchExistingMap('sales'),
+          fetchExistingMap('purchases'),
+          fetchExistingMap('stockLogs'),
+          fetchExistingMap('debts'),
+          fetchExistingMap('expenses'),
+          fetchExistingMap('deliveries'),
+        ]);
 
-        await batch.commit();
+        const queueRecord = (
+          colName: string,
+          existingMap: Map<string, Record<string, unknown>>,
+          rawId: string | undefined,
+          fields: Record<string, unknown>,
+          isStockLog = false
+        ) => {
+          let docId = sanitizeId(rawId || generateDocId(colName));
+          const existing = existingMap.get(docId);
+
+          if (existing) {
+            if (isStockLog && existing.productId !== fields.productId) {
+              docId = sanitizeId(generateDocId(colName));
+              ops.push({
+                kind: 'set',
+                ref: doc(db, 'shops', uid, colName, docId),
+                data: {
+                  ...fields,
+                  ownerId: uid,
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                },
+              });
+              return;
+            }
+            const updatePayload = { ...fields };
+            if (isStockLog) delete updatePayload.productId;
+            ops.push({
+              kind: 'update',
+              ref: doc(db, 'shops', uid, colName, docId),
+              data: {
+                ...updatePayload,
+                updatedAt: serverTimestamp(),
+              },
+            });
+          } else {
+            ops.push({
+              kind: 'set',
+              ref: doc(db, 'shops', uid, colName, docId),
+              data: {
+                ...fields,
+                ownerId: uid,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              },
+            });
+          }
+        };
+
+        (backup.products || []).forEach((p, idx) => {
+          queueRecord('products', existingProducts, p.id, {
+            sku: clampString(p.sku, 64) || `SKU-${idx + 1}`,
+            name: clampString(p.name, 140) || `Item ${idx + 1}`,
+            category: clampString(p.category, 64) || 'General',
+            unit: clampString(p.unit, 32) || 'pcs',
+            costPrice: clampNumber(p.costPrice, 0, 1000000000),
+            marginPercent: clampNumber(p.marginPercent, 0, 10000),
+            sellPrice: clampNumber(p.sellPrice, 0, 1000000000),
+            stock: clampNumber(p.stock, -1000000, 100000000),
+            minStock: clampNumber(p.minStock, 0, 10000000),
+          });
+        });
+
+        (backup.sales || []).forEach((s, idx) => {
+          const safeItems = Array.isArray(s.items) && s.items.length > 0 ? s.items.slice(0, 100) : null;
+          if (!safeItems) return;
+          const pm = ['cash', 'kbzpay', 'wavepay', 'credit'].includes(s.paymentMethod)
+            ? s.paymentMethod
+            : 'cash';
+          queueRecord('sales', existingSales, s.id, {
+            voucherNo: clampString(s.voucherNo, 48) || `INV-${idx + 1}`,
+            date: sanitizeDate(String(s.date || '')),
+            customerName: clampString(s.customerName, 120),
+            customerPhone: clampString(s.customerPhone, 40),
+            paymentMethod: pm,
+            items: safeItems,
+            subtotal: clampNumber(s.subtotal, 0),
+            discount: clampNumber(s.discount, 0),
+            total: clampNumber(s.total, 0),
+            totalCost: clampNumber(s.totalCost, 0),
+            profit: Number.isFinite(Number(s.profit)) ? Number(s.profit) : 0,
+            paidAmount: clampNumber(s.paidAmount, 0),
+            note: clampString(s.note, 240),
+          });
+        });
+
+        (backup.purchases || []).forEach((p, idx) => {
+          const safeItems = Array.isArray(p.items) && p.items.length > 0 ? p.items.slice(0, 100) : null;
+          if (!safeItems) return;
+          queueRecord('purchases', existingPurchases, p.id, {
+            refNo: clampString(p.refNo, 48) || `PO-${idx + 1}`,
+            date: sanitizeDate(String(p.date || '')),
+            supplierName: clampString(p.supplierName, 120) || 'Supplier',
+            items: safeItems,
+            totalAmount: clampNumber(p.totalAmount, 0),
+            paidAmount: clampNumber(p.paidAmount, 0),
+            status: p.status === 'credit' ? 'credit' : 'paid',
+            note: clampString(p.note, 240),
+          });
+        });
+
+        (backup.stockLogs || []).forEach((l) => {
+          const logType = ['in', 'out', 'adjust'].includes(l.type) ? l.type : 'adjust';
+          queueRecord(
+            'stockLogs',
+            existingLogs,
+            l.id,
+            {
+              productId: sanitizeId(String(l.productId || 'general')),
+              productName: clampString(l.productName, 140) || 'Product',
+              type: logType,
+              quantity: Number.isFinite(Number(l.quantity)) ? Number(l.quantity) : 0,
+              previousStock: Number.isFinite(Number(l.previousStock)) ? Number(l.previousStock) : 0,
+              newStock: Number.isFinite(Number(l.newStock)) ? Number(l.newStock) : 0,
+              reason: clampString(l.reason, 200) || 'Restore backup',
+              date: sanitizeDate(String(l.date || '')),
+            },
+            true
+          );
+        });
+
+        (backup.debts || []).forEach((d) => {
+          const debtStatus = ['pending', 'partial', 'settled'].includes(d.status)
+            ? d.status
+            : 'pending';
+          queueRecord('debts', existingDebts, d.id, {
+            type: d.type === 'payable' ? 'payable' : 'receivable',
+            partyName: clampString(d.partyName, 120) || 'Customer',
+            phone: clampString(d.phone, 40),
+            referenceNo: clampString(d.referenceNo, 48),
+            totalAmount: clampNumber(d.totalAmount, 0),
+            paidAmount: clampNumber(d.paidAmount, 0),
+            remainingAmount: clampNumber(d.remainingAmount, 0),
+            dueDate: sanitizeDate(String(d.dueDate || '')),
+            status: debtStatus,
+            note: clampString(d.note, 240),
+          });
+        });
+
+        (backup.expenses || []).forEach((e) => {
+          queueRecord('expenses', existingExpenses, e.id, {
+            date: sanitizeDate(String(e.date || '')),
+            category: clampString(e.category, 64) || 'General',
+            title: clampString(e.title, 140) || 'Expense',
+            amount: clampNumber(e.amount, 0),
+            note: clampString(e.note, 240),
+          });
+        });
+
+        (backup.deliveries || []).forEach((d, idx) => {
+          const delStatus = ['pending', 'dispatched', 'delivered', 'cancelled'].includes(d.status)
+            ? d.status
+            : 'pending';
+          queueRecord('deliveries', existingDeliveries, d.id, {
+            voucherNo: clampString(d.voucherNo, 48) || `DEL-${idx + 1}`,
+            date: sanitizeDate(String(d.date || '')),
+            customerName: clampString(d.customerName, 120) || 'Customer',
+            phone: clampString(d.phone, 40),
+            address: clampString(d.address, 240) || '-',
+            courierName: clampString(d.courierName, 80) || 'Courier',
+            deliveryFee: clampNumber(d.deliveryFee, 0),
+            codAmount: clampNumber(d.codAmount, 0),
+            status: delStatus,
+            note: clampString(d.note, 240),
+          });
+        });
+
+        const CHUNK_SIZE = 400;
+        for (let i = 0; i < ops.length; i += CHUNK_SIZE) {
+          const chunk = ops.slice(i, i + CHUNK_SIZE);
+          const batch = writeBatch(db);
+          chunk.forEach((op) => {
+            if (op.kind === 'update') {
+              batch.update(op.ref, op.data);
+            } else {
+              batch.set(op.ref, op.data);
+            }
+          });
+          await batch.commit();
+        }
+
         showToast(
           lang === 'my'
             ? 'Backup ဖိုင်မှ Firebase Cloud သို့ ပြန်သွင်းပြီးပါပြီ။'

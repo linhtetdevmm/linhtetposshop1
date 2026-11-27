@@ -410,6 +410,7 @@ export async function createSupabaseAccessPass(pass: {
   expiresAtMs: number;
   maxDevices: number;
   createdBy: string;
+  assignedEmail?: string;
 }): Promise<{ ok: boolean; error?: string }> {
   const supabase = getClientSupabase();
   if (!supabase) return { ok: false, error: 'Supabase not configured.' };
@@ -426,12 +427,166 @@ export async function createSupabaseAccessPass(pass: {
     max_devices: pass.maxDevices,
     bound_devices: [],
     assigned_uid: '',
-    assigned_email: '',
+    assigned_email: (pass.assignedEmail || '').trim().toLowerCase().slice(0, 160),
     created_by: pass.createdBy,
     updated_at: new Date().toISOString(),
   });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
+}
+
+export async function adminCreateSupabaseUserAndBindPass(input: {
+  email: string;
+  password: string;
+  label: string;
+  note: string;
+  passCode: string;
+  durationDays: number;
+  expiresAtMs: number;
+  maxDevices: number;
+  createdBy: string;
+}): Promise<{
+  ok: boolean;
+  userId?: string;
+  needsEmailConfirm?: boolean;
+  error?: string;
+}> {
+  const supabase = getClientSupabase();
+  const { url, anonKey } = getClientSupabaseCredentials();
+  if (!supabase || !url || !anonKey) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+
+  const cleanEmail = input.email.trim().toLowerCase();
+  const expIso = new Date(input.expiresAtMs).toISOString();
+  const nowIso = new Date().toISOString();
+
+  // 1. Try privileged server-side endpoint first (auto-confirms email when SERVICE_ROLE_KEY is set)
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token || '';
+    if (accessToken) {
+      const resp = await fetch('/api/admin/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password: input.password,
+          label: input.label,
+          note: input.note,
+          passCode: input.passCode,
+          durationDays: input.durationDays,
+          expiresAtMs: input.expiresAtMs,
+          maxDevices: input.maxDevices,
+        }),
+      });
+      const contentType = resp.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const json = (await resp.json()) as {
+          ok?: boolean;
+          code?: string;
+          userId?: string;
+          error?: string;
+        };
+        if (resp.ok && json.ok && json.userId) {
+          return { ok: true, userId: json.userId, needsEmailConfirm: false };
+        }
+        // Only fall back to client ephemeral signup when server lacks service_role key
+        if (json.code !== 'service_role_missing' && resp.status !== 404) {
+          return { ok: false, error: json.error || 'Failed to create customer account.' };
+        }
+      }
+    }
+  } catch {
+    // Static host or network proxy unavailable -> fall back to client ephemeral signup
+  }
+
+  // 2. Client fallback using an isolated non-persisting Supabase client so Admin session stays intact
+  const ephemeral = createClient(url, anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: 'linpos_ephemeral_admin_signup',
+    },
+  });
+
+  const { data: signUpData, error: signUpErr } = await ephemeral.auth.signUp({
+    email: cleanEmail,
+    password: input.password,
+    options: {
+      data: {
+        full_name: input.label,
+      },
+    },
+  });
+
+  if (signUpErr) {
+    return { ok: false, error: signUpErr.message };
+  }
+
+  const createdUser = signUpData?.user;
+  if (!createdUser?.id) {
+    return { ok: false, error: 'Failed to create customer account.' };
+  }
+
+  // Supabase returns empty identities array when email already exists (with confirmation enabled)
+  if (Array.isArray(createdUser.identities) && createdUser.identities.length === 0) {
+    return { ok: false, error: 'An account with this email already exists.' };
+  }
+
+  const newUid = createdUser.id;
+  const needsEmailConfirm = !signUpData.session;
+
+  const { error: passErr } = await supabase.from('pos_access_passes').upsert({
+    code: input.passCode,
+    label: input.label,
+    note: input.note,
+    status: 'active',
+    duration_days: input.durationDays,
+    expires_at: expIso,
+    subscription_expiry: expIso,
+    max_devices: input.maxDevices,
+    bound_devices: [],
+    assigned_uid: newUid,
+    assigned_email: cleanEmail,
+    created_by: input.createdBy,
+    updated_at: nowIso,
+  });
+  if (passErr) return { ok: false, error: `pos_access_passes: ${passErr.message}` };
+
+  const { error: licErr } = await supabase.from('pos_user_licenses').upsert({
+    user_id: newUid,
+    email: cleanEmail,
+    display_name: input.label,
+    pass_code: input.passCode,
+    label: input.label,
+    status: 'active',
+    expires_at: expIso,
+    subscription_expiry: expIso,
+    max_devices: input.maxDevices,
+    updated_at: nowIso,
+  });
+  if (licErr) return { ok: false, error: `pos_user_licenses: ${licErr.message}` };
+
+  const { error: shopErr } = await supabase.from('pos_shops').upsert({
+    owner_id: newUid,
+    shop_name: input.label,
+    shop_subtitle: 'POS & Inventory Management',
+    phone: '',
+    address: '',
+    receipt_footer: 'ဝယ်ယူအားပေးမှုအတွက် အထူးကျေးဇူးတင်ပါသည်။',
+    currency: 'MMK',
+    default_margin_percent: 25,
+    telegram_enabled: false,
+    updated_at: nowIso,
+  });
+  if (shopErr) return { ok: false, error: `pos_shops: ${shopErr.message}` };
+
+  return { ok: true, userId: newUid, needsEmailConfirm };
 }
 
 export async function updateSupabaseAccessPass(
