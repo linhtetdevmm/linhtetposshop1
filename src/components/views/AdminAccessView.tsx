@@ -80,36 +80,13 @@ const DURATION_PRESETS = [
   { days: 365, my: '၁ နှစ် (၃၆၅ ရက်)', en: '1 Year' },
 ];
 
-const DEFAULT_PUBLIC_APP_URL = 'https://linhtetposshop1.vercel.app';
-const SHARE_URL_STORAGE_KEY = 'linpos_share_web_url';
+const FIXED_KEY_SHARE_URL = 'https://linposdev.myanmarmuslimlibrary.org';
 
-function normalizeShareUrl(raw: string): string {
-  const trimmed = raw.trim().replace(/\/+$/, '');
-  if (!trimmed) return DEFAULT_PUBLIC_APP_URL;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
-}
-
-function resolveDefaultShareUrl(): string {
-  try {
-    const saved = localStorage.getItem(SHARE_URL_STORAGE_KEY);
-    if (saved && saved.trim()) return normalizeShareUrl(saved);
-  } catch {
-    // Ignore storage errors
+function buildKeyLink(passCode?: string, includePassQuery = true): string {
+  if (includePassQuery && passCode) {
+    return `${FIXED_KEY_SHARE_URL}/?pass=${encodeURIComponent(passCode)}`;
   }
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname.toLowerCase();
-    // Private dev preview / localhost links cannot be opened by customers
-    if (
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host.startsWith('ais-dev-')
-    ) {
-      return DEFAULT_PUBLIC_APP_URL;
-    }
-    return normalizeShareUrl(window.location.origin);
-  }
-  return DEFAULT_PUBLIC_APP_URL;
+  return `${FIXED_KEY_SHARE_URL}/`;
 }
 
 export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) => {
@@ -129,7 +106,6 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
   const [label, setLabel] = useState('');
   const [note, setNote] = useState('');
   const [passCode, setPassCode] = useState(() => generateRandomPassCode('LIN'));
-  const [shareWebUrl, setShareWebUrl] = useState<string>(() => resolveDefaultShareUrl());
   const [durationMode, setDurationMode] = useState<'preset' | 'custom'>('preset');
   const [durationDays, setDurationDays] = useState<number>(30);
   const [customExpiryDate, setCustomExpiryDate] = useState<string>(() => {
@@ -309,19 +285,6 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
     });
   }, [passes, search, statusFilter, nowMs]);
 
-  const handleShareUrlChange = (next: string) => {
-    setShareWebUrl(next);
-    try {
-      if (next.trim()) {
-        localStorage.setItem(SHARE_URL_STORAGE_KEY, next.trim());
-      } else {
-        localStorage.removeItem(SHARE_URL_STORAGE_KEY);
-      }
-    } catch {
-      // Ignore storage errors
-    }
-  };
-
   const copyText = async (text: string, msgMy: string, msgEn: string) => {
     try {
       if (navigator.clipboard && window.isSecureContext) {
@@ -366,10 +329,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
     p: AccessPass,
     creds?: { email: string; password: string } | null
   ) => {
-    const baseUrl = normalizeShareUrl(shareWebUrl);
-    const directUrl = creds
-      ? baseUrl
-      : `${baseUrl}/?pass=${encodeURIComponent(p.code)}`;
+    const directUrl = buildKeyLink(p.code, !creds);
     const expStr = formatExpiryDate(p.expiresAtMs);
     if (creds) {
       return [
@@ -401,10 +361,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
     creds?: { email: string; password: string } | null
   ) => {
     const text = buildShareInvite(p, creds);
-    const baseUrl = normalizeShareUrl(shareWebUrl);
-    const directUrl = creds
-      ? baseUrl
-      : `${baseUrl}/?pass=${encodeURIComponent(p.code)}`;
+    const directUrl = buildKeyLink(p.code, !creds);
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
         await navigator.share({
@@ -1360,50 +1317,26 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
               </button>
             </div>
 
-            {/* Public Share URL Configuration */}
-            <div className="p-3 rounded-xl bg-titanium-50 dark:bg-titanium-950 border border-titanium-200/80 dark:border-titanium-800 space-y-2">
+            {/* Fixed Public Key Share Domain */}
+            <div className="p-3 rounded-xl bg-titanium-50 dark:bg-titanium-950 border border-titanium-200/80 dark:border-titanium-800 space-y-1.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="inline-flex items-center gap-1.5 text-xs font-medium text-titanium-700 dark:text-titanium-300">
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-titanium-700 dark:text-titanium-300">
                   <Link2 className="w-3.5 h-3.5 text-burgundy-700 dark:text-burgundy-300" />
                   {lang === 'my'
-                    ? 'Customer ထံ Share ပေးမည့် Public Web Link'
-                    : 'Public Share Web Link (Used in Invites)'}
-                </label>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleShareUrlChange(DEFAULT_PUBLIC_APP_URL)}
-                    className="px-2 py-0.5 text-[11px] font-medium rounded bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-700 text-titanium-700 dark:text-titanium-300 hover:border-burgundy-500"
-                  >
-                    Vercel Live
-                  </button>
-                  {typeof window !== 'undefined' &&
-                    window.location.hostname.toLowerCase().startsWith('ais-dev-') && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleShareUrlChange(
-                            window.location.origin.replace('https://ais-dev-', 'https://ais-pre-')
-                          )
-                        }
-                        className="px-2 py-0.5 text-[11px] font-medium rounded bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-700 text-titanium-700 dark:text-titanium-300 hover:border-burgundy-500"
-                      >
-                        AI Studio Shared
-                      </button>
-                    )}
-                </div>
+                    ? 'Customer ထံ ပေးပို့မည့် Key Link Domain (အသေသတ်မှတ်ပြီး)'
+                    : 'Fixed Key Link Domain'}
+                </span>
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-burgundy-50 dark:bg-burgundy-950/60 text-burgundy-700 dark:text-burgundy-300 border border-burgundy-200 dark:border-burgundy-800">
+                  {lang === 'my' ? 'အသေသတ်မှတ်ထားသည်' : 'Locked'}
+                </span>
               </div>
-              <input
-                type="url"
-                value={shareWebUrl}
-                onChange={(e) => handleShareUrlChange(e.target.value)}
-                placeholder={DEFAULT_PUBLIC_APP_URL}
-                className="w-full px-3 py-1.5 text-xs font-mono-num bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-              />
+              <div className="w-full px-3 py-1.5 text-xs font-mono-num bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-700 rounded-lg text-titanium-800 dark:text-titanium-100 select-all">
+                {`${FIXED_KEY_SHARE_URL}/`}
+              </div>
               <p className="text-[11px] text-titanium-500 dark:text-titanium-400">
                 {lang === 'my'
-                  ? 'AI Studio Preview (ais-dev) Link သည် ပြင်ပဖုန်းများမှ ဝင်၍မရသောကြောင့် Customer များထံ ပို့သည့်အခါ Public Vercel Link (သို့) Shared App URL ကို အလိုအလျောက် ထည့်သွင်းပေးထားပါသည်။'
-                  : 'Private preview (ais-dev) links do not work for customers, so invites automatically use your public production URL.'}
+                  ? 'Key ဘယ်နှစ်ခါထုတ်ထုတ် ဤ Domain Link ကိုသာ အမြဲတမ်း ထည့်သွင်းထုတ်ပေးပါမည်။'
+                  : 'All generated key links and invites always use this fixed domain.'}
               </p>
             </div>
 
@@ -1455,6 +1388,20 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
                   >
                     <Copy className="w-3.5 h-3.5" />
                     {lang === 'my' ? 'ကုဒ်ကူးမည်' : 'Copy Code'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      copyText(
+                        buildKeyLink(lastCreatedPass.code, !lastCreatedCredentials),
+                        'Key Link Copy ကူးပြီးပါပြီ။',
+                        'Key link copied.'
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white dark:bg-titanium-900 text-burgundy-800 dark:text-burgundy-300 border border-burgundy-300 dark:border-burgundy-800 rounded-lg whitespace-nowrap"
+                  >
+                    <Link2 className="w-3.5 h-3.5" />
+                    {lang === 'my' ? 'လင့်ကူးမည်' : 'Copy Link'}
                   </button>
                   <button
                     type="button"
@@ -1617,8 +1564,22 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
                       <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                         <button
                           type="button"
+                          onClick={() =>
+                            copyText(
+                              buildKeyLink(p.code, true),
+                              'Key Link Copy ကူးပြီးပါပြီ။',
+                              'Key link copied.'
+                            )
+                          }
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium bg-burgundy-50 dark:bg-burgundy-950/40 hover:bg-burgundy-100 dark:hover:bg-burgundy-950/70 text-burgundy-700 dark:text-burgundy-300 border border-burgundy-200 dark:border-burgundy-800 rounded-lg whitespace-nowrap"
+                        >
+                          <Link2 className="w-3 h-3" />
+                          {lang === 'my' ? 'လင့်ကူး' : 'Copy Link'}
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => shareInvite(p)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200 dark:hover:bg-titanium-700 text-titanium-700 dark:text-titanium-200 rounded-lg"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200 dark:hover:bg-titanium-700 text-titanium-700 dark:text-titanium-200 rounded-lg whitespace-nowrap"
                         >
                           <Share2 className="w-3 h-3" />
                           {lang === 'my' ? 'ဖိတ်စာ Share' : 'Share'}

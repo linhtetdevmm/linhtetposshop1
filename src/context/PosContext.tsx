@@ -224,6 +224,7 @@ interface PosContextValue {
     paidAmount: number;
     status: 'paid' | 'credit';
     note: string;
+    purchaseMode?: 'retail' | 'wholesale';
   }) => Promise<void>;
   updatePurchase: (
     id: string,
@@ -2323,12 +2324,49 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       paidAmount: number;
       status: 'paid' | 'credit';
       note: string;
+      purchaseMode?: 'retail' | 'wholesale';
     }) => {
       const uid = activeShopId;
       const purId = sanitizeId(generateDocId('pur'));
-      const refNo = generateVoucherNo('PO');
+      const boundedItems: PurchaseItem[] = payload.items.slice(0, 100).map((it) => {
+        const clean: PurchaseItem = {
+          productId: sanitizeId(String(it.productId || '')),
+          sku: clampString(it.sku, 64),
+          name: clampString(it.name, 140),
+          qty: clampNumber(it.qty, 1, 10000000),
+          costPrice: clampNumber(it.costPrice, 0, 1000000000),
+          lineTotal: clampNumber(it.lineTotal, 0, 1000000000),
+        };
+        if (it.purchaseMode === 'wholesale' || it.purchaseMode === 'retail') {
+          clean.purchaseMode = it.purchaseMode;
+        }
+        if (typeof it.packCount === 'number' && Number.isFinite(it.packCount) && it.packCount > 0) {
+          clean.packCount = clampNumber(it.packCount, 1, 1000000);
+        }
+        if (
+          typeof it.unitsPerPack === 'number' &&
+          Number.isFinite(it.unitsPerPack) &&
+          it.unitsPerPack > 0
+        ) {
+          clean.unitsPerPack = clampNumber(it.unitsPerPack, 1, 1000000);
+        }
+        if (typeof it.packCost === 'number' && Number.isFinite(it.packCost) && it.packCost >= 0) {
+          clean.packCost = clampNumber(it.packCost, 0, 1000000000);
+        }
+        if (
+          typeof it.wholesaleDiscount === 'number' &&
+          Number.isFinite(it.wholesaleDiscount) &&
+          it.wholesaleDiscount > 0
+        ) {
+          clean.wholesaleDiscount = clampNumber(it.wholesaleDiscount, 0, 1000000000);
+        }
+        return clean;
+      });
+      const isWholesale =
+        payload.purchaseMode === 'wholesale' ||
+        boundedItems.some((it) => it.purchaseMode === 'wholesale' || (it.packCount ?? 0) > 0);
+      const refNo = generateVoucherNo(isWholesale ? 'PO-W' : 'PO');
       const date = sanitizeDate(payload.date);
-      const boundedItems = payload.items.slice(0, 100);
       const totalAmount = boundedItems.reduce((s, it) => s + it.lineTotal, 0);
       const paidAmount =
         payload.status === 'paid' ? totalAmount : clampNumber(payload.paidAmount, 0, totalAmount);
@@ -2350,11 +2388,19 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!user || user.provider === 'supabase') {
         const updatedProds: Product[] = [];
         const newLogs: StockLog[] = [];
+        const qtyByProd = new Map<string, { qty: number; lastCost: number }>();
+        boundedItems.forEach((it) => {
+          const cur = qtyByProd.get(it.productId);
+          qtyByProd.set(it.productId, {
+            qty: (cur?.qty || 0) + it.qty,
+            lastCost: it.costPrice,
+          });
+        });
         products.forEach((prod) => {
-          const matched = boundedItems.find((i) => i.productId === prod.id);
+          const matched = qtyByProd.get(prod.id);
           if (!matched) return;
           const nextStock = prod.stock + matched.qty;
-          const nextCost = matched.costPrice;
+          const nextCost = matched.lastCost;
           const nextSell = Math.round(nextCost * (1 + prod.marginPercent / 100));
           updatedProds.push({ ...prod, stock: nextStock, costPrice: nextCost, sellPrice: nextSell });
           newLogs.push({
@@ -2366,7 +2412,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             quantity: matched.qty,
             previousStock: prod.stock,
             newStock: nextStock,
-            reason: `Purchase ${refNo}`,
+            reason: `${isWholesale ? 'Wholesale Purchase' : 'Purchase'} ${refNo}`,
             date,
           });
         });
@@ -2447,7 +2493,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               quantity: item.qty,
               previousStock: existingProd.stock,
               newStock: nextStock,
-              reason: clampString(`Purchase ${refNo}`, 200),
+              reason: clampString(`${isWholesale ? 'Wholesale Purchase' : 'Purchase'} ${refNo}`, 200),
               date,
               createdAt: serverTimestamp(),
             });
@@ -2498,7 +2544,40 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     ) => {
       const uid = activeShopId;
-      const boundedItems = payload.items.slice(0, 100);
+      const boundedItems: PurchaseItem[] = payload.items.slice(0, 100).map((it) => {
+        const clean: PurchaseItem = {
+          productId: sanitizeId(String(it.productId || '')),
+          sku: clampString(it.sku, 64),
+          name: clampString(it.name, 140),
+          qty: clampNumber(it.qty, 1, 10000000),
+          costPrice: clampNumber(it.costPrice, 0, 1000000000),
+          lineTotal: clampNumber(it.lineTotal, 0, 1000000000),
+        };
+        if (it.purchaseMode === 'wholesale' || it.purchaseMode === 'retail') {
+          clean.purchaseMode = it.purchaseMode;
+        }
+        if (typeof it.packCount === 'number' && Number.isFinite(it.packCount) && it.packCount > 0) {
+          clean.packCount = clampNumber(it.packCount, 1, 1000000);
+        }
+        if (
+          typeof it.unitsPerPack === 'number' &&
+          Number.isFinite(it.unitsPerPack) &&
+          it.unitsPerPack > 0
+        ) {
+          clean.unitsPerPack = clampNumber(it.unitsPerPack, 1, 1000000);
+        }
+        if (typeof it.packCost === 'number' && Number.isFinite(it.packCost) && it.packCost >= 0) {
+          clean.packCost = clampNumber(it.packCost, 0, 1000000000);
+        }
+        if (
+          typeof it.wholesaleDiscount === 'number' &&
+          Number.isFinite(it.wholesaleDiscount) &&
+          it.wholesaleDiscount > 0
+        ) {
+          clean.wholesaleDiscount = clampNumber(it.wholesaleDiscount, 0, 1000000000);
+        }
+        return clean;
+      });
       if (boundedItems.length === 0) return;
       const totalAmount = boundedItems.reduce((s, it) => s + it.lineTotal, 0);
       const paidAmount =

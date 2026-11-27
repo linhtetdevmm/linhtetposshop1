@@ -132,6 +132,11 @@ export interface PurchaseItem {
   qty: number;
   costPrice: number;
   lineTotal: number;
+  purchaseMode?: 'retail' | 'wholesale';
+  packCount?: number;
+  unitsPerPack?: number;
+  packCost?: number;
+  wholesaleDiscount?: number;
 }
 
 export interface Purchase {
