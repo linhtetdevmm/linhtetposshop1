@@ -77,6 +77,16 @@ export const translations = {
 
     // Voucher Modal
     voucherTitle: 'အရောင်းဘောင်ချာ (Voucher)',
+    compactTicket: 'ဘောင်ချာအကျဉ်း',
+    detailedInvoice: 'အသေးစိတ်ပြေစာ',
+    businessCard: 'ဆိုင်လိပ်စာကတ်',
+    billTo: 'ဝယ်ယူသူအချက်အလက်',
+    invoiceHeading: 'အရောင်းပြေစာ (INVOICE)',
+    paymentStatus: 'ငွေချေအခြေအနေ',
+    statusPaid: 'ငွေရှင်းပြီး',
+    statusPartial: 'တစ်စိတ်တစ်ပိုင်း',
+    statusUnpaid: 'အကြွေးကျန်',
+    authorizedSignature: 'တာဝန်ခံလက်မှတ်',
     exportPng: 'PNG ထုတ်မည်',
     exportPdf: 'PDF ထုတ်မည်',
     sendTelegram: 'Telegram ပို့မည်',
@@ -146,9 +156,22 @@ export const translations = {
 
     // Expenses
     addExpense: 'ကုန်ကျစရိတ် ထည့်မည်',
+    quickExpense: 'အမြန်ကုန်ကျစရိတ်',
+    quickExpenseSubtitle: 'နေ့စဉ်လုပ်ငန်းကုန်ကျစရိတ်ကို အမြန်မှတ်တမ်းတင်ပါ',
     expenseTitle: 'အကြောင်းအရာ',
     amount: 'ပမာဏ (MMK)',
     note: 'မှတ်ချက်',
+
+    // Barcode Scanner
+    scanBarcode: 'ဘားကုဒ်စကင်',
+    scannerTitle: 'ဘားကုဒ်စကင်ဖတ်ပြီး ထည့်မည်',
+    scannerHint: 'ကင်မရာရှေ့တွင် ပစ္စည်းဘားကုဒ် (SKU) ကို ချိန်ပါ',
+    manualBarcodePlaceholder: 'သို့မဟုတ် SKU / ဘားကုဒ် ရိုက်ထည့်ပါ...',
+    continuousScan: 'ဆက်တိုက်စကင်ဖတ်မည်',
+    barcodeAdded: 'ဈေးခြင်းထဲ ထည့်ပြီးပါပြီ',
+    barcodeNotFound: 'ကုန်ပစ္စည်း မတွေ့ပါ',
+    cameraUnavailable: 'ကင်မရာ ဖွင့်၍မရပါ။ ခွင့်ပြုချက်စစ်ဆေးပါ သို့မဟုတ် ကုဒ်ရိုက်ထည့်ပါ။',
+    switchCamera: 'ကင်မရာ',
 
     // Delivery
     addDelivery: 'ပို့ဆောင်မှုအသစ်',
@@ -276,6 +299,16 @@ export const translations = {
 
     // Voucher Modal
     voucherTitle: 'Sales Voucher',
+    compactTicket: 'Compact Ticket',
+    detailedInvoice: 'Detailed Invoice',
+    businessCard: 'Business Card',
+    billTo: 'Bill To',
+    invoiceHeading: 'INVOICE',
+    paymentStatus: 'Payment Status',
+    statusPaid: 'Paid',
+    statusPartial: 'Partial',
+    statusUnpaid: 'Credit Due',
+    authorizedSignature: 'Authorized Signature',
     exportPng: 'Export PNG',
     exportPdf: 'Export PDF',
     sendTelegram: 'Send to Telegram',
@@ -345,9 +378,22 @@ export const translations = {
 
     // Expenses
     addExpense: 'Add Expense',
+    quickExpense: 'Quick Expense',
+    quickExpenseSubtitle: 'Log daily operational expense without leaving the dashboard',
     expenseTitle: 'Description',
     amount: 'Amount (MMK)',
     note: 'Note',
+
+    // Barcode Scanner
+    scanBarcode: 'Barcode Scanner',
+    scannerTitle: 'Scan Product Barcode',
+    scannerHint: 'Align the product barcode or QR code inside the frame',
+    manualBarcodePlaceholder: 'Or type / scan SKU barcode manually...',
+    continuousScan: 'Keep scanning',
+    barcodeAdded: 'Added to cart',
+    barcodeNotFound: 'Product not found for code',
+    cameraUnavailable: 'Camera unavailable. Check browser permissions or enter the SKU below.',
+    switchCamera: 'Camera',
 
     // Delivery
     addDelivery: 'New Delivery',

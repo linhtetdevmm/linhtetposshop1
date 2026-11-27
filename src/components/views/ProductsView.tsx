@@ -305,7 +305,8 @@ export const ProductsView: React.FC = () => {
                     </label>
                     <input
                       type="number"
-                      step="0.5"
+                      step="any"
+                      inputMode="decimal"
                       min={0}
                       required
                       value={marginPercent}

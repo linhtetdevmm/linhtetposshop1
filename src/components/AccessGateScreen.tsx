@@ -218,17 +218,17 @@ export const AccessGateScreen: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-titanium-50 dark:bg-titanium-950 text-titanium-900 dark:text-titanium-50">
-      {/* Minimal Top Utility Bar */}
-      <header className="h-16 px-4 sm:px-6 flex items-center justify-between border-b border-titanium-200 dark:border-titanium-800/90 bg-white/90 dark:bg-titanium-900/90 backdrop-blur-md">
+      {/* Deep Royal Blue Top Utility Bar */}
+      <header className="h-16 px-4 sm:px-6 flex items-center justify-between border-b border-burgundy-800 dark:border-titanium-800/90 bg-burgundy-900 dark:bg-titanium-900/95 text-white shadow-sm">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-burgundy-700 dark:bg-burgundy-600 dark:ring-1 dark:ring-burgundy-400/30 text-white flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-white/15 dark:bg-burgundy-600 border border-white/20 dark:border-burgundy-400/30 text-white flex items-center justify-center">
             <Lock className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-sm font-bold tracking-tight text-burgundy-800 dark:text-burgundy-300">
+            <div className="text-sm font-bold tracking-tight text-white dark:text-burgundy-300">
               Lin Pos System
             </div>
-            <div className="text-[11px] text-titanium-500 dark:text-titanium-400">
+            <div className="text-[11px] text-burgundy-200 dark:text-titanium-400">
               {expiredState
                 ? lang === 'my'
                   ? 'လိုင်စင် သက်တမ်းတိုးရန်'
@@ -244,7 +244,7 @@ export const AccessGateScreen: React.FC = () => {
           <button
             type="button"
             onClick={() => setLang(lang === 'my' ? 'en' : 'my')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-titanium-700 dark:text-titanium-200 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-lg transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-white/12 hover:bg-white/20 dark:bg-titanium-800 dark:hover:bg-titanium-700 border border-white/15 dark:border-titanium-700 rounded-lg transition-colors"
           >
             <Globe className="w-3.5 h-3.5" />
             {lang === 'my' ? 'မြန်မာ / EN' : 'EN / မြန်မာ'}
@@ -252,7 +252,7 @@ export const AccessGateScreen: React.FC = () => {
           <button
             type="button"
             onClick={toggleDarkMode}
-            className="p-2 text-titanium-700 dark:text-burgundy-300 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-lg transition-colors"
+            className="p-2 text-white dark:text-burgundy-300 bg-white/12 hover:bg-white/20 dark:bg-titanium-800 dark:hover:bg-titanium-700 border border-white/15 dark:border-titanium-700 rounded-lg transition-colors"
             aria-label="Toggle theme"
           >
             {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -261,8 +261,8 @@ export const AccessGateScreen: React.FC = () => {
       </header>
 
       {/* Main Centered Gate Card */}
-      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 dark:bg-[radial-gradient(ellipse_at_top,rgba(34,78,224,0.16),transparent_65%)]">
-        <div className="w-full max-w-md bg-white dark:bg-titanium-900/95 border border-titanium-200 dark:border-titanium-800 rounded-2xl shadow-sm dark:shadow-none p-6 sm:p-8 space-y-6">
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 bg-[radial-gradient(ellipse_at_top,rgba(17,42,140,0.12),transparent_60%)] dark:bg-[radial-gradient(ellipse_at_top,rgba(34,78,224,0.18),transparent_65%)]">
+        <div className="w-full max-w-md bg-white dark:bg-titanium-900/95 border border-titanium-200/90 dark:border-titanium-800 rounded-2xl shadow-xl shadow-burgundy-950/10 dark:shadow-none p-6 sm:p-8 space-y-6">
           <div className="space-y-2 text-center">
             <div
               className={`mx-auto w-12 h-12 rounded-xl border flex items-center justify-center ${

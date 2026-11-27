@@ -1,19 +1,35 @@
 import React, { useMemo, useState } from 'react';
-import { Minus, Pencil, Plus, Receipt, Search, ShoppingCart, Trash2, Truck, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  Minus,
+  Pencil,
+  Plus,
+  Receipt,
+  ScanBarcode,
+  Search,
+  ShoppingCart,
+  Trash2,
+  Truck,
+  X,
+  Zap,
+} from 'lucide-react';
 import type { PaymentMethod, Product, Sale, SaleItem } from '../../types/pos';
 import { usePos } from '../../context/PosContext';
 import { useT } from '../../i18n/translations';
 import { formatMMK } from '../../lib/format';
+import { BarcodeScannerModal } from '../BarcodeScannerModal';
 
 interface PosSalesViewProps {
   onOpenVoucher: (sale: Sale) => void;
 }
 
 export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => {
-  const { products, sales, lang, createSale, updateSale, deleteSale } = usePos();
+  const { products, sales, lang, createSale, updateSale, deleteSale, showToast } = usePos();
   const t = useT(lang);
 
   const [subTab, setSubTab] = useState<'counter' | 'history'>('counter');
+  const [mobilePane, setMobilePane] = useState<'catalog' | 'cart'>('catalog');
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
 
@@ -179,6 +195,24 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
     });
   };
 
+  const handleScannedProduct = (product: Product) => {
+    addToCart(product);
+    showToast(`${product.name} — ${t('barcodeAdded')}`, 'success');
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    const q = search.trim().toLowerCase();
+    if (!q) return;
+    const exactSkuMatch = products.find((p) => p.sku.trim().toLowerCase() === q);
+    const target = exactSkuMatch || (filteredProducts.length === 1 ? filteredProducts[0] : null);
+    if (target) {
+      e.preventDefault();
+      handleScannedProduct(target);
+      setSearch('');
+    }
+  };
+
   const updateCartQty = (productId: string, delta: number) => {
     setCart((prev) =>
       prev
@@ -236,9 +270,24 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
       setNote('');
       setIncludeDelivery(false);
       setDeliveryAddress('');
+      setMobilePane('catalog');
       onOpenVoucher(created);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const totalCartQty = useMemo(
+    () => cart.reduce((sum, item) => sum + item.qty, 0),
+    [cart]
+  );
+
+  const openMobileCart = () => {
+    setMobilePane('cart');
+    try {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {
+      // Ignore scroll error
     }
   };
 
@@ -255,8 +304,8 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
 
   return (
     <div className="space-y-5">
-      {/* Sub-navigation Segmented Control */}
-      <div className="flex items-center justify-between gap-4">
+      {/* Sub-navigation Segmented Control + Mobile Catalog/Cart Quick Switch */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex items-center gap-1 p-1 bg-titanium-200/70 dark:bg-titanium-800 rounded-lg">
           <button
             onClick={() => setSubTab('counter')}
@@ -279,22 +328,69 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
             {t('salesHistory')} ({sales.length})
           </button>
         </div>
+
+        {subTab === 'counter' && (
+          <div className="lg:hidden inline-flex items-center gap-1 p-1 bg-titanium-200/70 dark:bg-titanium-800 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setMobilePane('catalog')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+                mobilePane === 'catalog'
+                  ? 'bg-white dark:bg-titanium-900 text-burgundy-800 dark:text-burgundy-200 shadow-xs'
+                  : 'text-titanium-600 dark:text-titanium-400'
+              }`}
+            >
+              {lang === 'my' ? 'ပစ္စည်းရွေး' : 'Items'}
+            </button>
+            <button
+              type="button"
+              onClick={openMobileCart}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
+                mobilePane === 'cart'
+                  ? 'bg-burgundy-700 dark:bg-burgundy-600 text-white shadow-xs'
+                  : cart.length > 0
+                  ? 'text-burgundy-800 dark:text-burgundy-300'
+                  : 'text-titanium-600 dark:text-titanium-400'
+              }`}
+            >
+              <ShoppingCart className="w-3.5 h-3.5" />
+              {lang === 'my' ? 'ဘောင်ချာ' : 'Cart'} ({totalCartQty})
+            </button>
+          </div>
+        )}
       </div>
 
       {subTab === 'counter' ? (
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-          {/* Left: Product Catalog Selector */}
-          <div className="xl:col-span-7 space-y-4">
-            <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-4 space-y-3">
-              <div className="relative">
-                <Search className="w-4 h-4 text-titanium-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={t('searchPlaceholder')}
-                  className="w-full pl-9 pr-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-burgundy-600/30 focus:border-burgundy-600"
-                />
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left: Product Catalog Selector */}
+            <div
+              className={`lg:col-span-7 space-y-4 ${
+                mobilePane === 'cart' ? 'hidden lg:block' : 'block'
+              } ${cart.length > 0 ? 'pb-24 lg:pb-0' : ''}`}
+            >
+            <div className="bg-white dark:bg-titanium-900 border border-titanium-200/90 dark:border-titanium-800 rounded-xl p-4 space-y-3 shadow-xs">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 min-w-0">
+                  <Search className="w-4 h-4 text-titanium-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    placeholder={t('searchPlaceholder')}
+                    className="w-full pl-9 pr-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-burgundy-600/30 focus:border-burgundy-600"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setScannerOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-lg transition-colors whitespace-nowrap shrink-0 shadow-xs"
+                  title={t('scanBarcode')}
+                >
+                  <ScanBarcode className="w-4 h-4" />
+                  <span>{t('scanBarcode')}</span>
+                </button>
               </div>
 
               <div className="flex flex-wrap gap-1.5">
@@ -304,7 +400,7 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
                     onClick={() => setSelectedCategory(cat)}
                     className={`px-3 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
                       selectedCategory === cat
-                        ? 'bg-burgundy-700 dark:bg-burgundy-600 text-white'
+                        ? 'bg-burgundy-700 dark:bg-burgundy-600 text-white shadow-xs'
                         : 'bg-titanium-100 dark:bg-titanium-800 text-titanium-700 dark:text-titanium-300 hover:bg-titanium-200 dark:hover:bg-titanium-700'
                     }`}
                   >
@@ -324,10 +420,10 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
                     key={product.id}
                     type="button"
                     onClick={() => addToCart(product)}
-                    className={`text-left bg-white dark:bg-titanium-900 border rounded-xl p-3.5 transition-all hover:border-burgundy-600 dark:hover:border-burgundy-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-burgundy-600 ${
+                    className={`text-left bg-white dark:bg-titanium-900 border rounded-xl p-3.5 shadow-xs hover:shadow-sm transition-all hover:border-burgundy-600 dark:hover:border-burgundy-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-burgundy-600 ${
                       inCartQty > 0
-                        ? 'border-burgundy-600 dark:border-burgundy-500 ring-1 ring-burgundy-600/20'
-                        : 'border-titanium-200 dark:border-titanium-800'
+                        ? 'border-burgundy-600 dark:border-burgundy-500 ring-2 ring-burgundy-600/20 bg-burgundy-50/35 dark:bg-burgundy-950/30'
+                        : 'border-titanium-200/90 dark:border-titanium-800'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -370,235 +466,304 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
             </div>
           </div>
 
-          {/* Right: Live POS Cart & Checkout */}
-          <div className="xl:col-span-5 bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5 space-y-4 sticky top-20">
-            <div className="flex items-center justify-between border-b border-titanium-200 dark:border-titanium-800 pb-3">
-              <div className="flex items-center gap-2">
-                <ShoppingCart className="w-4 h-4 text-burgundy-700 dark:text-burgundy-300" />
-                <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">
-                  {t('cart')} ({cart.reduce((s, i) => s + i.qty, 0)})
-                </h3>
-              </div>
-              {cart.length > 0 && (
-                <button
-                  onClick={() => setCart([])}
-                  className="text-xs text-titanium-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                >
-                  {t('clearCart')}
-                </button>
-              )}
-            </div>
-
-            {cart.length === 0 ? (
-              <div className="py-10 text-center text-sm text-titanium-400 dark:text-titanium-500">
-                {t('emptyCart')}
-              </div>
-            ) : (
-              <div className="divide-y divide-titanium-100 dark:divide-titanium-800 max-h-64 overflow-y-auto pr-1">
-                {cart.map((item) => (
-                  <div
-                    key={item.productId}
-                    className="py-2.5 flex items-center justify-between gap-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium text-titanium-900 dark:text-titanium-50 truncate">
-                        {item.name}
-                      </div>
-                      <div className="text-xs font-mono-num text-titanium-500 dark:text-titanium-400">
-                        {formatMMK(item.unitPrice)} × {item.qty}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => updateCartQty(item.productId, -1)}
-                        className="w-7 h-7 flex items-center justify-center rounded-md border border-titanium-200 dark:border-titanium-700 text-titanium-600 dark:text-titanium-300 hover:bg-titanium-100 dark:hover:bg-titanium-800"
-                        aria-label="Decrease quantity"
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="w-7 text-center text-xs font-mono-num font-semibold">
-                        {item.qty}
-                      </span>
-                      <button
-                        onClick={() => updateCartQty(item.productId, 1)}
-                        className="w-7 h-7 flex items-center justify-center rounded-md border border-titanium-200 dark:border-titanium-700 text-titanium-600 dark:text-titanium-300 hover:bg-titanium-100 dark:hover:bg-titanium-800"
-                        aria-label="Increase quantity"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <div className="w-24 text-right text-xs font-mono-num font-semibold text-titanium-900 dark:text-titanium-50 shrink-0">
-                      {formatMMK(item.lineTotal)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Customer & Payment Fields */}
-            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-titanium-200 dark:border-titanium-800">
-              <div>
-                <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
-                  {t('customerName')}
-                </label>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder={t('walkInCustomer')}
-                  className="w-full px-3 py-1.5 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
-                  {t('customerPhone')}
-                </label>
-                <input
-                  type="text"
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  placeholder="09-..."
-                  className="w-full px-3 py-1.5 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-                />
-              </div>
-            </div>
-
-            {/* Payment Method */}
-            <div>
-              <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1.5">
-                {t('paymentMethod')}
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                {(['cash', 'kbzpay', 'wavepay', 'credit'] as PaymentMethod[]).map((pm) => (
-                  <button
-                    key={pm}
-                    type="button"
-                    onClick={() => {
-                      setPaymentMethod(pm);
-                      if (pm === 'credit') setPaidAmount('0');
-                      else setPaidAmount('');
-                    }}
-                    className={`px-2.5 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap ${
-                      paymentMethod === pm
-                        ? 'border-burgundy-700 dark:border-burgundy-600 bg-burgundy-700 dark:bg-burgundy-600 text-white'
-                        : 'border-titanium-200 dark:border-titanium-700 text-titanium-700 dark:text-titanium-300 hover:bg-titanium-50 dark:hover:bg-titanium-800'
-                    }`}
-                  >
-                    {t(pm)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Discount & Paid Input */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
-                  {t('discount')}
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={discount}
-                  onChange={(e) => setDiscount(e.target.value)}
-                  className="w-full px-3 py-1.5 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
-                  {t('paidAmount')}
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={paidAmount}
-                  onChange={(e) => setPaidAmount(e.target.value)}
-                  placeholder={String(grandTotal)}
-                  className="w-full px-3 py-1.5 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-                />
-              </div>
-            </div>
-
-            {/* Optional Delivery Dispatch Toggle */}
-            <div className="pt-1">
-              <label className="inline-flex items-center gap-2 text-xs font-medium text-titanium-700 dark:text-titanium-300 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={includeDelivery}
-                  onChange={(e) => setIncludeDelivery(e.target.checked)}
-                  className="rounded border-titanium-300 dark:border-titanium-700 accent-burgundy-700 text-burgundy-700 focus:ring-burgundy-600"
-                />
-                <Truck className="w-3.5 h-3.5 text-titanium-500 dark:text-titanium-400" />
-                {t('addToDelivery')}
-              </label>
-              {includeDelivery && (
-                <div className="mt-2.5 grid grid-cols-2 gap-2.5 pt-2 border-t border-titanium-100 dark:border-titanium-800">
-                  <input
-                    type="text"
-                    value={deliveryAddress}
-                    onChange={(e) => setDeliveryAddress(e.target.value)}
-                    placeholder={t('address')}
-                    className="col-span-2 px-3 py-1.5 text-xs bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-                  />
-                  <input
-                    type="text"
-                    value={courierName}
-                    onChange={(e) => setCourierName(e.target.value)}
-                    placeholder={t('courierName')}
-                    className="px-3 py-1.5 text-xs bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    value={deliveryFee}
-                    onChange={(e) => setDeliveryFee(e.target.value)}
-                    placeholder={t('deliveryFee')}
-                    className="px-3 py-1.5 text-xs font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Totals Summary */}
-            <div className="border-t border-titanium-200 dark:border-titanium-800 pt-3 space-y-1.5 text-sm">
-              <div className="flex justify-between text-titanium-600 dark:text-titanium-400">
-                <span>{t('subtotal')}</span>
-                <span className="font-mono-num">{formatMMK(subtotal)}</span>
-              </div>
-              <div className="flex justify-between text-base font-bold text-titanium-900 dark:text-titanium-50">
-                <span>{t('grandTotal')}</span>
-                <span className="font-mono-num text-burgundy-800 dark:text-burgundy-300">
-                  {formatMMK(grandTotal)}
-                </span>
-              </div>
-              {cart.length > 0 && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-titanium-500 dark:text-titanium-400">
-                    {diff >= 0 ? t('changeAmount') : t('dueAmount')}
-                  </span>
-                  <span
-                    className={`font-mono-num font-semibold ${
-                      diff >= 0
-                        ? 'text-emerald-700 dark:text-emerald-400'
-                        : 'text-red-700 dark:text-red-400'
-                    }`}
-                  >
-                    {formatMMK(Math.abs(diff))}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={handleCheckout}
-              disabled={cart.length === 0 || submitting}
-              className="w-full py-2.5 px-4 text-sm font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-45 rounded-lg transition-colors"
+            {/* Right: Live POS Cart & Checkout (Sticky on Desktop with Deep Blue Header & Pinned Footer) */}
+            <div
+              className={`lg:col-span-5 bg-white dark:bg-titanium-900 border border-titanium-200/90 dark:border-titanium-800 rounded-xl shadow-sm overflow-hidden flex flex-col lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] ${
+                mobilePane === 'catalog' ? 'hidden lg:flex' : 'flex'
+              }`}
             >
-              {submitting ? '...' : t('completeSale')}
-            </button>
+              {/* Cart Header (Deep Royal Blue Bar) */}
+              <div className="flex items-center justify-between bg-gradient-to-r from-burgundy-800 to-burgundy-900 dark:from-burgundy-900 dark:to-titanium-900 text-white px-5 py-3.5 shrink-0">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMobilePane('catalog')}
+                    className="lg:hidden inline-flex items-center gap-1 px-2 py-1 -ml-1 text-xs font-medium text-white bg-white/15 hover:bg-white/25 rounded-md"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    {lang === 'my' ? 'ပစ္စည်းထပ်ရွေး' : 'Items'}
+                  </button>
+                  <ShoppingCart className="w-4 h-4 text-burgundy-200 hidden lg:block" />
+                  <h3 className="text-sm font-semibold text-white">
+                    {t('cart')} ({totalCartQty})
+                  </h3>
+                </div>
+                {cart.length > 0 && (
+                  <button
+                    onClick={() => setCart([])}
+                    className="text-xs text-burgundy-100 hover:text-red-200 transition-colors"
+                  >
+                    {t('clearCart')}
+                  </button>
+                )}
+              </div>
+
+              {/* Scrollable Middle: Cart Items + Customer + Payment + Options */}
+              <div className="lg:flex-1 lg:overflow-y-auto px-5 space-y-4 py-3.5">
+                {cart.length === 0 ? (
+                  <div className="py-10 text-center space-y-3">
+                    <p className="text-sm text-titanium-500 dark:text-titanium-400">
+                      {t('emptyCart')}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setMobilePane('catalog')}
+                      className="lg:hidden inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-burgundy-700 dark:bg-burgundy-600 rounded-lg"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      {lang === 'my' ? 'ပစ္စည်းသွားရွေးမည်' : 'Browse Products'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-titanium-100 dark:divide-titanium-800 max-h-56 lg:max-h-60 overflow-y-auto pr-1">
+                    {cart.map((item) => (
+                      <div
+                        key={item.productId}
+                        className="py-2.5 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-titanium-900 dark:text-titanium-50 truncate">
+                            {item.name}
+                          </div>
+                          <div className="text-xs font-mono-num text-titanium-500 dark:text-titanium-400">
+                            {formatMMK(item.unitPrice)} × {item.qty}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={() => updateCartQty(item.productId, -1)}
+                            className="w-7 h-7 flex items-center justify-center rounded-md border border-titanium-200 dark:border-titanium-700 text-titanium-600 dark:text-titanium-300 hover:bg-titanium-100 dark:hover:bg-titanium-800"
+                            aria-label="Decrease quantity"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="w-7 text-center text-xs font-mono-num font-semibold">
+                            {item.qty}
+                          </span>
+                          <button
+                            onClick={() => updateCartQty(item.productId, 1)}
+                            className="w-7 h-7 flex items-center justify-center rounded-md border border-titanium-200 dark:border-titanium-700 text-titanium-600 dark:text-titanium-300 hover:bg-titanium-100 dark:hover:bg-titanium-800"
+                            aria-label="Increase quantity"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="w-24 text-right text-xs font-mono-num font-semibold text-titanium-900 dark:text-titanium-50 shrink-0">
+                          {formatMMK(item.lineTotal)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Customer & Payment Fields */}
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-titanium-200 dark:border-titanium-800">
+                  <div>
+                    <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
+                      {t('customerName')}
+                    </label>
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder={t('walkInCustomer')}
+                      className="w-full px-3 py-1.5 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
+                      {t('customerPhone')}
+                    </label>
+                    <input
+                      type="text"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="09-..."
+                      className="w-full px-3 py-1.5 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                    />
+                  </div>
+                </div>
+
+                {/* Payment Method */}
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1.5">
+                    {t('paymentMethod')}
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {(['cash', 'kbzpay', 'wavepay', 'credit'] as PaymentMethod[]).map((pm) => (
+                      <button
+                        key={pm}
+                        type="button"
+                        onClick={() => {
+                          setPaymentMethod(pm);
+                          if (pm === 'credit') setPaidAmount('0');
+                          else setPaidAmount('');
+                        }}
+                        className={`px-2.5 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap ${
+                          paymentMethod === pm
+                            ? 'border-burgundy-700 dark:border-burgundy-600 bg-burgundy-700 dark:bg-burgundy-600 text-white'
+                            : 'border-titanium-200 dark:border-titanium-700 text-titanium-700 dark:text-titanium-300 hover:bg-titanium-50 dark:hover:bg-titanium-800'
+                        }`}
+                      >
+                        {t(pm)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Discount & Paid Input */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
+                      {t('discount')}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={discount}
+                      onChange={(e) => setDiscount(e.target.value)}
+                      className="w-full px-3 py-1.5 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
+                      {t('paidAmount')}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={paidAmount}
+                      onChange={(e) => setPaidAmount(e.target.value)}
+                      placeholder={String(grandTotal)}
+                      className="w-full px-3 py-1.5 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                    />
+                  </div>
+                </div>
+
+                {/* Optional Delivery Dispatch Toggle */}
+                <div className="pt-1">
+                  <label className="inline-flex items-center gap-2 text-xs font-medium text-titanium-700 dark:text-titanium-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeDelivery}
+                      onChange={(e) => setIncludeDelivery(e.target.checked)}
+                      className="rounded border-titanium-300 dark:border-titanium-700 accent-burgundy-700 text-burgundy-700 focus:ring-burgundy-600"
+                    />
+                    <Truck className="w-3.5 h-3.5 text-titanium-500 dark:text-titanium-400" />
+                    {t('addToDelivery')}
+                  </label>
+                  {includeDelivery && (
+                    <div className="mt-2.5 grid grid-cols-2 gap-2.5 pt-2 border-t border-titanium-100 dark:border-titanium-800">
+                      <input
+                        type="text"
+                        value={deliveryAddress}
+                        onChange={(e) => setDeliveryAddress(e.target.value)}
+                        placeholder={t('address')}
+                        className="col-span-2 px-3 py-1.5 text-xs bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                      />
+                      <input
+                        type="text"
+                        value={courierName}
+                        onChange={(e) => setCourierName(e.target.value)}
+                        placeholder={t('courierName')}
+                        className="px-3 py-1.5 text-xs bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        value={deliveryFee}
+                        onChange={(e) => setDeliveryFee(e.target.value)}
+                        placeholder={t('deliveryFee')}
+                        className="px-3 py-1.5 text-xs font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Pinned Bottom Summary & Checkout Voucher Button (Always Visible) */}
+              <div className="border-t border-titanium-200 dark:border-titanium-800 px-5 pt-3.5 pb-4 space-y-3 shrink-0 bg-burgundy-50/35 dark:bg-titanium-950/40">
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between text-titanium-600 dark:text-titanium-400">
+                    <span>{t('subtotal')}</span>
+                    <span className="font-mono-num">{formatMMK(subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-base font-bold text-titanium-900 dark:text-titanium-50">
+                    <span>{t('grandTotal')}</span>
+                    <span className="font-mono-num text-burgundy-800 dark:text-burgundy-300">
+                      {formatMMK(grandTotal)}
+                    </span>
+                  </div>
+                  {cart.length > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-titanium-500 dark:text-titanium-400">
+                        {diff >= 0 ? t('changeAmount') : t('dueAmount')}
+                      </span>
+                      <span
+                        className={`font-mono-num font-semibold ${
+                          diff >= 0
+                            ? 'text-emerald-700 dark:text-emerald-400'
+                            : 'text-red-700 dark:text-red-400'
+                        }`}
+                      >
+                        {formatMMK(Math.abs(diff))}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCheckout}
+                  disabled={cart.length === 0 || submitting}
+                  className="w-full py-2.5 px-4 text-sm font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-45 rounded-lg shadow-xs transition-colors"
+                >
+                  {submitting ? '...' : t('completeSale')}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+
+          {/* Mobile Sticky Bottom Checkout Dock (No scrolling down required after picking items) */}
+          {cart.length > 0 && mobilePane === 'catalog' && (
+            <div className="lg:hidden fixed bottom-3 left-3 right-3 z-40 bg-white/95 dark:bg-titanium-900/95 backdrop-blur-md border border-burgundy-200 dark:border-burgundy-700/60 rounded-xl shadow-lg px-3.5 py-2.5 flex items-center justify-between gap-2.5">
+              <button
+                type="button"
+                onClick={openMobileCart}
+                className="min-w-0 text-left flex-1"
+              >
+                <div className="text-[11px] text-titanium-500 dark:text-titanium-400 truncate">
+                  {totalCartQty} {t('items')} · {t('cart')}
+                </div>
+                <div className="text-sm font-bold font-mono-num text-burgundy-800 dark:text-burgundy-300 truncate">
+                  {formatMMK(grandTotal)}
+                </div>
+              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={openMobileCart}
+                  className="px-3 py-2 text-xs font-semibold text-burgundy-800 dark:text-burgundy-200 bg-burgundy-50 dark:bg-burgundy-950/80 border border-burgundy-200 dark:border-burgundy-800 rounded-lg whitespace-nowrap"
+                >
+                  {lang === 'my' ? 'ခြင်းကြည့်' : 'Review'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCheckout}
+                  disabled={submitting}
+                  className="inline-flex items-center gap-1 px-3.5 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-45 rounded-lg whitespace-nowrap"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  {submitting
+                    ? '...'
+                    : lang === 'my'
+                    ? 'ဘောင်ချာထုတ်'
+                    : 'Voucher'}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         /* Sales History Tab */
         <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl overflow-hidden">
@@ -917,6 +1082,14 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
           </form>
         </div>
       )}
+
+      <BarcodeScannerModal
+        open={scannerOpen}
+        products={products}
+        lang={lang}
+        onClose={() => setScannerOpen(false)}
+        onAddProduct={handleScannedProduct}
+      />
     </div>
   );
 };

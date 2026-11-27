@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -8,11 +8,13 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { ArrowRight, Receipt } from 'lucide-react';
+import { ArrowRight, Plus, Receipt, Wallet, X } from 'lucide-react';
 import type { NavTab, Sale } from '../../types/pos';
 import { usePos } from '../../context/PosContext';
 import { useT } from '../../i18n/translations';
 import { formatMMK, getTodayISO } from '../../lib/format';
+
+const EXPENSE_CATEGORIES = ['Rent', 'Utilities', 'Staff', 'Transport', 'Packaging', 'Marketing', 'Misc'];
 
 interface DashboardViewProps {
   onNavigate: (tab: NavTab) => void;
@@ -23,11 +25,47 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigate,
   onOpenVoucher,
 }) => {
-  const { products, sales, debts, expenses, deliveries, lang, darkMode } = usePos();
+  const { products, sales, debts, expenses, deliveries, lang, darkMode, saveExpense } = usePos();
   const t = useT(lang);
 
   const today = getTodayISO();
   const currentMonth = today.slice(0, 7);
+
+  // Quick Expense Modal State
+  const [quickExpenseOpen, setQuickExpenseOpen] = useState(false);
+  const [expDate, setExpDate] = useState(today);
+  const [expCategory, setExpCategory] = useState('Utilities');
+  const [expTitle, setExpTitle] = useState('');
+  const [expAmount, setExpAmount] = useState('');
+  const [expNote, setExpNote] = useState('');
+  const [savingExpense, setSavingExpense] = useState(false);
+
+  const openQuickExpense = () => {
+    setExpDate(getTodayISO());
+    setExpCategory('Utilities');
+    setExpTitle('');
+    setExpAmount('');
+    setExpNote('');
+    setQuickExpenseOpen(true);
+  };
+
+  const handleQuickExpenseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!expTitle.trim() || savingExpense) return;
+    setSavingExpense(true);
+    try {
+      await saveExpense({
+        date: expDate || getTodayISO(),
+        category: expCategory,
+        title: expTitle.trim(),
+        amount: Number(expAmount) || 0,
+        note: expNote.trim(),
+      });
+      setQuickExpenseOpen(false);
+    } finally {
+      setSavingExpense(false);
+    }
+  };
 
   const stats = useMemo(() => {
     const todaySalesTotal = sales
@@ -96,22 +134,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }, [sales, expenses]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       {/* Primary 4-Column KPI Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5">
-          <div className="text-xs font-medium text-titanium-500 dark:text-titanium-400">
+        <div className="bg-gradient-to-br from-burgundy-800 via-burgundy-700 to-burgundy-900 dark:from-burgundy-800 dark:via-burgundy-900 dark:to-titanium-900 text-white border border-burgundy-700 dark:border-burgundy-700/70 rounded-xl p-5 shadow-md shadow-burgundy-900/15">
+          <div className="text-xs font-medium text-burgundy-100">
             {t('todaySales')}
           </div>
-          <div className="mt-2 text-2xl font-bold font-mono-num text-titanium-900 dark:text-titanium-50">
+          <div className="mt-2 text-2xl font-bold font-mono-num text-white">
             {formatMMK(stats.todaySalesTotal)}
           </div>
-          <div className="mt-2 text-xs text-titanium-500 dark:text-titanium-400">
+          <div className="mt-2 text-xs text-burgundy-100/90">
             {sales.filter((s) => s.date === today).length} {t('orders')} · {today}
           </div>
         </div>
 
-        <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5">
+        <div className="bg-white dark:bg-titanium-900 border border-titanium-200/90 dark:border-titanium-800 rounded-xl p-5 shadow-xs">
           <div className="text-xs font-medium text-titanium-500 dark:text-titanium-400">
             {t('totalSalesMonth')}
           </div>
@@ -124,7 +162,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5">
+        <div className="bg-white dark:bg-titanium-900 border border-titanium-200/90 dark:border-titanium-800 rounded-xl p-5 shadow-xs">
           <div className="text-xs font-medium text-titanium-500 dark:text-titanium-400">
             {t('netProfit')} ({currentMonth})
           </div>
@@ -142,7 +180,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5">
+        <div className="bg-white dark:bg-titanium-900 border border-titanium-200/90 dark:border-titanium-800 rounded-xl p-5 shadow-xs">
           <div className="text-xs font-medium text-titanium-500 dark:text-titanium-400">
             {t('lowStockCount')}
           </div>
@@ -165,7 +203,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Secondary Operational Summary Row (Flat Hairline Bar) */}
-      <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl px-5 py-3.5 flex flex-wrap items-center justify-between gap-4 text-sm">
+      <div className="bg-white dark:bg-titanium-900 border border-titanium-200/90 dark:border-titanium-800 rounded-xl px-5 py-3.5 shadow-xs flex flex-wrap items-center justify-between gap-4 text-sm">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <div>
             <span className="text-xs text-titanium-500 dark:text-titanium-400 mr-2">
@@ -209,7 +247,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* Main Chart + Low Stock Watchlist */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5">
+        <div className="lg:col-span-2 bg-white dark:bg-titanium-900 border border-titanium-200/90 dark:border-titanium-800 rounded-xl p-5 shadow-xs">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">
               {t('revenueProfitChart')}
@@ -284,7 +322,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Low Stock Watchlist */}
-        <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl p-5 flex flex-col">
+        <div className="bg-white dark:bg-titanium-900 border border-titanium-200/90 dark:border-titanium-800 rounded-xl p-5 shadow-xs flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">
               {t('lowStockAlerts')}
@@ -334,7 +372,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Recent Sales Table */}
-      <div className="bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-xl overflow-hidden">
+      <div className="bg-white dark:bg-titanium-900 border border-titanium-200/90 dark:border-titanium-800 rounded-xl overflow-hidden shadow-xs">
         <div className="flex items-center justify-between px-5 py-4 border-b border-titanium-200 dark:border-titanium-800">
           <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50">
             {t('recentSales')}
@@ -348,7 +386,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
-            <thead className="bg-titanium-50 dark:bg-titanium-950/60 text-xs text-titanium-500 dark:text-titanium-400 border-b border-titanium-200 dark:border-titanium-800">
+            <thead className="bg-burgundy-50/55 dark:bg-titanium-950/60 text-xs text-burgundy-900 dark:text-titanium-400 border-b border-titanium-200 dark:border-titanium-800">
               <tr>
                 <th className="px-5 py-3 font-medium">{t('voucherNo')}</th>
                 <th className="px-4 py-3 font-medium">{t('date')}</th>
@@ -405,6 +443,141 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Floating Quick Expense Button */}
+      <button
+        type="button"
+        onClick={openQuickExpense}
+        className="fixed bottom-6 right-6 z-30 inline-flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 rounded-xl shadow-lg shadow-burgundy-900/25 border border-burgundy-500/30 transition-all active:scale-[0.98] whitespace-nowrap"
+      >
+        <Plus className="w-4 h-4" />
+        <span>{t('quickExpense')}</span>
+      </button>
+
+      {/* Quick Expense Modal */}
+      {quickExpenseOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-titanium-950/60 backdrop-blur-xs p-4">
+          <form
+            onSubmit={handleQuickExpenseSubmit}
+            className="w-full max-w-md bg-white dark:bg-titanium-900 border border-titanium-200 dark:border-titanium-800 rounded-2xl overflow-hidden shadow-2xl"
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-titanium-200 dark:border-titanium-800">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-burgundy-50 dark:bg-burgundy-950/80 text-burgundy-700 dark:text-burgundy-300 flex items-center justify-center shrink-0">
+                  <Wallet className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-titanium-900 dark:text-titanium-50 truncate">
+                    {t('quickExpense')}
+                  </h3>
+                  <p className="text-[11px] text-titanium-500 dark:text-titanium-400 truncate">
+                    {t('quickExpenseSubtitle')}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuickExpenseOpen(false)}
+                className="p-1.5 text-titanium-500 hover:text-titanium-900 dark:hover:text-titanium-100 rounded-lg hover:bg-titanium-100 dark:hover:bg-titanium-800 transition-colors"
+                aria-label={t('close')}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3.5">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
+                    {t('date')}
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={expDate}
+                    onChange={(e) => setExpDate(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-burgundy-600/30 focus:border-burgundy-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
+                    {t('category')}
+                  </label>
+                  <select
+                    value={expCategory}
+                    onChange={(e) => setExpCategory(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-burgundy-600/30 focus:border-burgundy-600"
+                  >
+                    {EXPENSE_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
+                  {t('expenseTitle')}
+                </label>
+                <input
+                  required
+                  autoFocus
+                  value={expTitle}
+                  onChange={(e) => setExpTitle(e.target.value)}
+                  placeholder={lang === 'my' ? 'ဥပမာ - မီတာခ / ဆီဖိုး / ပစ္စည်းပို့ခ' : 'e.g. Electricity bill, fuel, supplies'}
+                  className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-burgundy-600/30 focus:border-burgundy-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
+                  {t('amount')}
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  inputMode="numeric"
+                  value={expAmount}
+                  onChange={(e) => setExpAmount(e.target.value)}
+                  placeholder="0"
+                  className="w-full px-3 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-burgundy-600/30 focus:border-burgundy-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">
+                  {t('note')}
+                </label>
+                <input
+                  value={expNote}
+                  onChange={(e) => setExpNote(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-burgundy-600/30 focus:border-burgundy-600"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-titanium-200 dark:border-titanium-800 bg-titanium-50/70 dark:bg-titanium-950/40">
+              <button
+                type="button"
+                onClick={() => setQuickExpenseOpen(false)}
+                className="px-4 py-2 text-xs font-medium text-titanium-600 dark:text-titanium-300 hover:bg-titanium-100 dark:hover:bg-titanium-800 rounded-lg"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                type="submit"
+                disabled={savingExpense || !expTitle.trim()}
+                className="px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 disabled:opacity-45 rounded-lg"
+              >
+                {savingExpense ? '...' : t('save')}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

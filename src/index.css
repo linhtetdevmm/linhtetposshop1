@@ -1,13 +1,25 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+@font-face {
+  font-family: "PaOhMyanmarPyum";
+  src: url("/fonts/PaOhMyanmarPyum.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
+  /* Use user's PaOhMyanmarPyum font exclusively across the entire app */
+  --font-sans: "PaOhMyanmarPyum", sans-serif;
+  --font-mono: "PaOhMyanmarPyum", monospace;
+
   /* Deep Luminous Cobalt Blue Accent Scale (inspired by WGSN Luminous Blue) */
   --color-burgundy-50: #eef4ff;
   --color-burgundy-100: #dce7ff;
-  --color-burgundy-200: #bfd4ff;
-  --color-burgundy-300: #91b6ff;
-  --color-burgundy-400: #5c8eff;
+  --color-burgundy-200: #cce0ff;
+  --color-burgundy-300: #8cb8ff;
+  --color-burgundy-400: #619bff;
   --color-burgundy-500: #386bf6;
   --color-burgundy-600: #224ee0;
   --color-burgundy-700: #1738b5;
@@ -15,24 +27,24 @@
   --color-burgundy-900: #0d2069;
   --color-burgundy-950: #0c1942;
 
-  /* Cool Architectural Slate (Light) & Midnight Sapphire-Obsidian (Dark) Neutrals */
-  --color-titanium-50: #f6f8fc;
-  --color-titanium-100: #edf1f8;
-  --color-titanium-200: #dce3ef;
-  --color-titanium-300: #c3cde0;
-  --color-titanium-400: #8c99b2;
-  --color-titanium-500: #606e88;
-  --color-titanium-600: #46536b;
+  /* Cool Architectural Slate (Light) & Midnight Sapphire-Obsidian with Crisp Ice-Silver Text (Dark) */
+  --color-titanium-50: #edf2fb;
+  --color-titanium-100: #e1eaf7;
+  --color-titanium-200: #d0dcf0;
+  --color-titanium-300: #cad7ed;
+  --color-titanium-400: #9db0d0;
+  --color-titanium-500: #5c6b87;
+  --color-titanium-600: #42506a;
   --color-titanium-700: #2c384e;
   --color-titanium-800: #1b253b;
   --color-titanium-900: #101729;
-  --color-titanium-950: #080d1a;
+  --color-titanium-950: #070c18;
 }
 
 @layer base {
   :root {
-    --font-sans: "Plus Jakarta Sans", "Noto Sans Myanmar", ui-sans-serif, system-ui, -apple-system, sans-serif;
-    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --font-sans: "PaOhMyanmarPyum", sans-serif;
+    --font-mono: "PaOhMyanmarPyum", monospace;
     color-scheme: light;
   }
 
@@ -40,16 +52,31 @@
     color-scheme: dark;
   }
 
+  *,
+  *::before,
+  *::after,
+  html,
+  body,
+  button,
+  input,
+  select,
+  textarea,
+  code,
+  pre,
+  kbd,
+  samp {
+    font-family: "PaOhMyanmarPyum", sans-serif;
+  }
+
   html {
-    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
 
-  /* Proper vertical rhythm for Myanmar Unicode script (diacritics, medials, stacked consonants) */
+  /* Generous vertical rhythm for PaOhMyanmarPyum Myanmar script diacritics & medials */
   body {
-    line-height: 1.65;
+    line-height: 1.7;
   }
 
   .dark body {
@@ -58,12 +85,12 @@
 
   h1, h2, h3, h4 {
     text-wrap: balance;
-    line-height: 1.35;
+    line-height: 1.5;
   }
 }
 
 .font-mono-num {
-  font-family: var(--font-mono);
+  font-family: "PaOhMyanmarPyum", sans-serif;
   font-variant-numeric: tabular-nums;
 }
 

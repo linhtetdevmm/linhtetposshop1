@@ -1,15 +1,26 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Boxes,
   Globe,
+  LayoutDashboard,
   LogIn,
   LogOut,
   Menu,
   Moon,
+  Package,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  ReceiptText,
+  Settings,
   Shield,
+  ShieldCheck,
+  ShoppingBag,
+  ShoppingCart,
   Sun,
+  TrendingUp,
+  Truck,
+  Wallet,
   X,
 } from 'lucide-react';
 import type { NavTab, Sale } from './types/pos';
@@ -128,23 +139,27 @@ function PosShell() {
     return <AccessGateScreen />;
   }
 
-  const navItems: { id: NavTab; label: string; emoji: string }[] = [
-    { id: 'dashboard', label: t('navDashboard'), emoji: '📊' },
-    { id: 'pos', label: t('navPos'), emoji: '🛒' },
-    { id: 'products', label: t('navProducts'), emoji: '📦' },
-    { id: 'purchases', label: t('navPurchases'), emoji: '🛍️' },
-    { id: 'stock', label: t('navStock'), emoji: '🗃️' },
-    { id: 'debts', label: t('navDebts'), emoji: '💳' },
-    { id: 'expenses', label: t('navExpenses'), emoji: '🧾' },
-    { id: 'delivery', label: t('navDelivery'), emoji: '🚚' },
-    { id: 'reports', label: t('navReports'), emoji: '📈' },
-    { id: 'settings', label: isAdmin ? t('navSettings') : t('shopProfileTab'), emoji: '⚙️' },
+  const navItems: {
+    id: NavTab;
+    label: string;
+    Icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+  }[] = [
+    { id: 'dashboard', label: t('navDashboard'), Icon: LayoutDashboard },
+    { id: 'pos', label: t('navPos'), Icon: ShoppingCart },
+    { id: 'products', label: t('navProducts'), Icon: Package },
+    { id: 'purchases', label: t('navPurchases'), Icon: ShoppingBag },
+    { id: 'stock', label: t('navStock'), Icon: Boxes },
+    { id: 'debts', label: t('navDebts'), Icon: Wallet },
+    { id: 'expenses', label: t('navExpenses'), Icon: ReceiptText },
+    { id: 'delivery', label: t('navDelivery'), Icon: Truck },
+    { id: 'reports', label: t('navReports'), Icon: TrendingUp },
+    { id: 'settings', label: isAdmin ? t('navSettings') : t('shopProfileTab'), Icon: Settings },
     ...(isAdmin
       ? [
           {
             id: 'admin' as NavTab,
             label: lang === 'my' ? 'Admin ဝင်ခွင့်စီမံမှု' : 'Admin Access',
-            emoji: '🛡️',
+            Icon: ShieldCheck,
           },
         ]
       : []),
@@ -160,28 +175,28 @@ function PosShell() {
 
   return (
     <div className="min-h-screen flex bg-titanium-50 dark:bg-titanium-950 text-titanium-900 dark:text-titanium-50">
-      {/* Desktop Collapsible Sidebar: Emoji-only by default, click top toggle button to reveal labels */}
+      {/* Desktop Collapsible Sidebar: Deep Royal Blue Architecture */}
       <aside
-        className={`hidden lg:flex lg:flex-col lg:shrink-0 bg-white dark:bg-titanium-900 border-r border-titanium-200 dark:border-titanium-800 sticky top-0 h-screen transition-all duration-200 ${
-          sidebarExpanded ? 'lg:w-64' : 'lg:w-[74px]'
+        className={`hidden lg:flex lg:flex-col lg:shrink-0 bg-gradient-to-b from-burgundy-900 via-burgundy-900 to-burgundy-950 dark:from-titanium-900 dark:via-titanium-950 dark:to-burgundy-950 text-white border-r border-burgundy-800/80 dark:border-titanium-800 sticky top-0 h-screen transition-all duration-200 shadow-lg shadow-burgundy-950/15 ${
+          sidebarExpanded ? 'lg:w-64' : 'lg:w-[70px]'
         }`}
       >
         {/* Top Header & Toggle Button */}
         <div
-          className={`h-16 flex items-center border-b border-titanium-200 dark:border-titanium-800 ${
+          className={`h-16 flex items-center border-b border-white/12 dark:border-titanium-800 ${
             sidebarExpanded ? 'px-4 justify-between gap-2' : 'px-2 justify-center'
           }`}
         >
           {sidebarExpanded && (
             <div className="min-w-0">
-              <div className="text-sm font-bold tracking-tight text-burgundy-800 dark:text-burgundy-300 truncate">
+              <div className="text-sm font-bold tracking-tight text-white dark:text-burgundy-200 truncate">
                 {shop.shopName}
               </div>
               <div
                 className={`text-[11px] truncate ${
                   !isAdmin && remainingDays !== null && remainingDays <= 5
-                    ? 'text-amber-700 dark:text-amber-300 font-medium'
-                    : 'text-titanium-500 dark:text-titanium-400'
+                    ? 'text-amber-300 font-medium'
+                    : 'text-burgundy-200/90 dark:text-titanium-400'
                 }`}
               >
                 {isAdmin
@@ -201,33 +216,34 @@ function PosShell() {
             title={
               sidebarExpanded
                 ? lang === 'my'
-                  ? 'ဘေးဘား ကျုံ့မည် (Emoji သာပြ)'
-                  : 'Collapse sidebar (Emoji only)'
+                  ? 'ဘေးဘား ကျုံ့မည် (အိုင်ကွန်သာပြ)'
+                  : 'Collapse sidebar (Icon rail)'
                 : lang === 'my'
                 ? 'ဘေးဘား ချဲ့မည် (စာသားများပြ)'
                 : 'Expand sidebar (Show labels)'
             }
             aria-label={sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
             aria-expanded={sidebarExpanded}
-            className="w-10 h-10 inline-flex items-center justify-center rounded-xl text-burgundy-800 dark:text-burgundy-300 bg-burgundy-50/80 dark:bg-burgundy-950/60 hover:bg-burgundy-100 dark:hover:bg-burgundy-900/70 border border-burgundy-200/70 dark:border-burgundy-800/60 transition-colors shrink-0"
+            className="w-9 h-9 inline-flex items-center justify-center rounded-lg text-burgundy-100 hover:text-white bg-white/10 hover:bg-white/20 dark:bg-titanium-900/80 dark:hover:bg-burgundy-900/70 border border-white/15 dark:border-titanium-700 transition-colors shrink-0"
           >
             {sidebarExpanded ? (
-              <PanelLeftClose className="w-4 h-4" />
+              <PanelLeftClose className="w-4 h-4" strokeWidth={1.85} />
             ) : (
-              <PanelLeftOpen className="w-4 h-4" />
+              <PanelLeftOpen className="w-4 h-4" strokeWidth={1.85} />
             )}
           </button>
         </div>
 
         {/* Navigation Links */}
-        <nav className={`flex-1 overflow-y-auto py-3 space-y-1 ${sidebarExpanded ? 'px-3' : 'px-2'}`}>
+        <nav className={`flex-1 overflow-y-auto py-3.5 space-y-1.5 ${sidebarExpanded ? 'px-3' : 'px-2.5'}`}>
           {navItems.map((item) => {
             const active = activeTab === item.id;
+            const IconComp = item.Icon;
             const showStockBadge = item.id === 'stock' && lowStockCount > 0;
             const badgeText = lowStockCount > 99 ? '99+' : String(lowStockCount);
             const badgeTone = hasOutOfStock
-              ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/70 dark:text-red-300 dark:border-red-800/80'
-              : 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800/80';
+              ? 'bg-red-500 text-white border-red-400'
+              : 'bg-amber-400 text-titanium-950 border-amber-300';
             const stockTitle = showStockBadge
               ? `${item.label} (${lowStockCount} ${lang === 'my' ? 'မျိုး လက်ကျန်နည်း' : 'low stock'})`
               : item.label;
@@ -238,28 +254,32 @@ function PosShell() {
                 onClick={() => handleSelectNav(item.id)}
                 title={stockTitle}
                 aria-label={stockTitle}
-                className={`relative w-full flex items-center rounded-xl transition-colors ${
-                  sidebarExpanded ? 'gap-3 px-3 py-2.5 text-left' : 'justify-center py-2.5 px-1'
+                className={`relative w-full flex items-center rounded-xl transition-all ${
+                  sidebarExpanded ? 'gap-3 px-3.5 py-2.5 text-left' : 'justify-center h-10 px-0'
                 } ${
                   active
-                    ? 'bg-burgundy-50 dark:bg-burgundy-950/85 text-burgundy-800 dark:text-burgundy-200 font-semibold ring-1 ring-burgundy-200/80 dark:ring-burgundy-600/45'
-                    : 'text-titanium-600 dark:text-titanium-400 hover:bg-titanium-100/80 dark:hover:bg-titanium-800/70 hover:text-titanium-900 dark:hover:text-titanium-50'
+                    ? 'bg-white text-burgundy-900 dark:bg-burgundy-600 dark:text-white font-semibold shadow-sm'
+                    : 'text-burgundy-100/85 dark:text-titanium-300 hover:bg-white/12 dark:hover:bg-titanium-800/80 hover:text-white'
                 }`}
               >
-                <span className="text-xl leading-none shrink-0 select-none" aria-hidden="true">
-                  {item.emoji}
-                </span>
+                <IconComp
+                  className={`w-[18px] h-[18px] shrink-0 ${
+                    active ? 'text-burgundy-700 dark:text-white' : ''
+                  }`}
+                  strokeWidth={active ? 2.15 : 1.75}
+                  aria-hidden="true"
+                />
                 {sidebarExpanded && <span className="text-sm truncate">{item.label}</span>}
                 {showStockBadge &&
                   (sidebarExpanded ? (
                     <span
-                      className={`ml-auto px-1.5 py-0.5 text-[10px] font-mono-num font-semibold rounded-md border leading-none shrink-0 ${badgeTone}`}
+                      className={`ml-auto px-1.5 py-0.5 text-[10px] font-mono-num font-bold rounded-md border leading-none shrink-0 ${badgeTone}`}
                     >
                       {badgeText}
                     </span>
                   ) : (
                     <span
-                      className={`absolute top-1 right-1 min-w-[16px] h-4 px-1 inline-flex items-center justify-center text-[9px] font-mono-num font-bold rounded-full border leading-none ${badgeTone}`}
+                      className={`absolute top-1 right-1 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center text-[9px] font-mono-num font-bold rounded-full border leading-none ${badgeTone}`}
                     >
                       {badgeText}
                     </span>
@@ -271,8 +291,8 @@ function PosShell() {
 
         {/* Sidebar Footer: Account & Theme/Lang Controls */}
         <div
-          className={`border-t border-titanium-200 dark:border-titanium-800 space-y-2 ${
-            sidebarExpanded ? 'p-3' : 'p-2 flex flex-col items-center'
+          className={`border-t border-white/12 dark:border-titanium-800 space-y-2 ${
+            sidebarExpanded ? 'p-3' : 'p-2.5 flex flex-col items-center'
           }`}
         >
           {sidebarExpanded ? (
@@ -281,7 +301,7 @@ function PosShell() {
                 <button
                   type="button"
                   onClick={() => setLang(lang === 'my' ? 'en' : 'my')}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-titanium-700 dark:text-titanium-200 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-md transition-colors whitespace-nowrap"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-white bg-white/12 hover:bg-white/20 dark:bg-titanium-800 dark:hover:bg-titanium-700 border border-white/12 dark:border-titanium-700 rounded-lg transition-colors whitespace-nowrap"
                 >
                   <Globe className="w-3.5 h-3.5" />
                   {lang === 'my' ? 'မြန်မာ / EN' : 'EN / မြန်မာ'}
@@ -289,7 +309,7 @@ function PosShell() {
                 <button
                   type="button"
                   onClick={toggleDarkMode}
-                  className="p-1.5 text-titanium-700 dark:text-burgundy-300 bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-md transition-colors"
+                  className="p-1.5 text-white dark:text-burgundy-300 bg-white/12 hover:bg-white/20 dark:bg-titanium-800 dark:hover:bg-titanium-700 border border-white/12 dark:border-titanium-700 rounded-lg transition-colors"
                   aria-label={darkMode ? t('lightMode') : t('darkMode')}
                   title={darkMode ? t('lightMode') : t('darkMode')}
                 >
@@ -298,19 +318,19 @@ function PosShell() {
               </div>
 
               {user ? (
-                <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+                <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white/8 dark:bg-titanium-900/70">
                   <div className="min-w-0">
-                    <div className="text-xs font-semibold text-titanium-900 dark:text-titanium-50 truncate">
+                    <div className="text-xs font-semibold text-white truncate">
                       {user.displayName || user.email}
                     </div>
-                    <div className="text-[11px] text-titanium-500 dark:text-titanium-400 truncate">
+                    <div className="text-[11px] text-burgundy-200 dark:text-titanium-400 truncate">
                       {user.email}
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={logout}
-                    className="p-1.5 text-titanium-500 hover:text-red-600 dark:hover:text-red-400 rounded-md transition-colors shrink-0"
+                    className="p-1.5 text-burgundy-200 hover:text-red-300 rounded-md transition-colors shrink-0"
                     title={t('signOut')}
                     aria-label={t('signOut')}
                   >
@@ -322,7 +342,7 @@ function PosShell() {
                   type="button"
                   onClick={loginWithGoogle}
                   disabled={signingIn}
-                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-burgundy-800 dark:text-burgundy-200 bg-white dark:bg-titanium-950 border border-titanium-300 dark:border-titanium-700 hover:bg-burgundy-50 dark:hover:bg-burgundy-950/60 disabled:opacity-50 rounded-lg transition-colors whitespace-nowrap"
+                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-burgundy-900 bg-white hover:bg-burgundy-50 disabled:opacity-50 rounded-lg transition-colors whitespace-nowrap"
                 >
                   <LogIn className="w-3.5 h-3.5" />
                   {signingIn ? '...' : t('signInGoogle')}
@@ -336,18 +356,22 @@ function PosShell() {
                 onClick={() => setLang(lang === 'my' ? 'en' : 'my')}
                 title={lang === 'my' ? 'Switch to EN' : 'မြန်မာဘာသာ'}
                 aria-label={lang === 'my' ? 'Switch to EN' : 'မြန်မာဘာသာ'}
-                className="w-10 h-10 inline-flex items-center justify-center text-base bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-xl transition-colors"
+                className="w-9 h-9 inline-flex items-center justify-center text-burgundy-100 hover:text-white bg-white/10 hover:bg-white/20 dark:bg-titanium-800/90 dark:hover:bg-titanium-700 border border-white/10 dark:border-titanium-700 rounded-lg transition-colors"
               >
-                🌐
+                <Globe className="w-4 h-4" strokeWidth={1.75} />
               </button>
               <button
                 type="button"
                 onClick={toggleDarkMode}
                 title={darkMode ? t('lightMode') : t('darkMode')}
                 aria-label={darkMode ? t('lightMode') : t('darkMode')}
-                className="w-10 h-10 inline-flex items-center justify-center text-base bg-titanium-100 dark:bg-titanium-800 hover:bg-titanium-200/80 dark:hover:bg-titanium-700 rounded-xl transition-colors"
+                className="w-9 h-9 inline-flex items-center justify-center text-burgundy-100 hover:text-white dark:text-burgundy-300 bg-white/10 hover:bg-white/20 dark:bg-titanium-800/90 dark:hover:bg-titanium-700 border border-white/10 dark:border-titanium-700 rounded-lg transition-colors"
               >
-                {darkMode ? '☀️' : '🌙'}
+                {darkMode ? (
+                  <Sun className="w-4 h-4" strokeWidth={1.75} />
+                ) : (
+                  <Moon className="w-4 h-4" strokeWidth={1.75} />
+                )}
               </button>
               {user ? (
                 <button
@@ -355,9 +379,9 @@ function PosShell() {
                   onClick={logout}
                   title={`${t('signOut')} (${user.email || ''})`}
                   aria-label={t('signOut')}
-                  className="w-10 h-10 inline-flex items-center justify-center text-titanium-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition-colors"
+                  className="w-9 h-9 inline-flex items-center justify-center text-burgundy-200 hover:text-red-200 hover:bg-red-500/20 rounded-lg transition-colors"
                 >
-                  <LogOut className="w-4 h-4" />
+                  <LogOut className="w-4 h-4" strokeWidth={1.75} />
                 </button>
               ) : !supabaseAuthReady ? (
                 <button
@@ -366,7 +390,7 @@ function PosShell() {
                   disabled={signingIn}
                   title={t('signInGoogle')}
                   aria-label={t('signInGoogle')}
-                  className="w-10 h-10 inline-flex items-center justify-center text-burgundy-800 dark:text-burgundy-200 bg-burgundy-50 dark:bg-burgundy-950/50 hover:bg-burgundy-100 rounded-xl transition-colors disabled:opacity-50"
+                  className="w-10 h-10 inline-flex items-center justify-center text-burgundy-900 bg-white hover:bg-burgundy-50 rounded-xl transition-colors disabled:opacity-50"
                 >
                   <LogIn className="w-4 h-4" />
                 </button>
@@ -383,43 +407,48 @@ function PosShell() {
             className="fixed inset-0 bg-titanium-950/60"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <aside className="relative w-72 max-w-[85vw] bg-white dark:bg-titanium-900 h-full flex flex-col border-r border-titanium-200 dark:border-titanium-800 z-10">
-            <div className="h-14 px-4 flex items-center justify-between border-b border-titanium-200 dark:border-titanium-800">
-              <span className="text-sm font-bold text-burgundy-800 dark:text-burgundy-300 truncate">
+          <aside className="relative w-72 max-w-[85vw] bg-gradient-to-b from-burgundy-900 via-burgundy-900 to-burgundy-950 dark:from-titanium-900 dark:via-titanium-950 dark:to-burgundy-950 text-white h-full flex flex-col border-r border-burgundy-800 dark:border-titanium-800 z-10">
+            <div className="h-14 px-4 flex items-center justify-between border-b border-white/12 dark:border-titanium-800">
+              <span className="text-sm font-bold text-white dark:text-burgundy-200 truncate">
                 {shop.shopName}
               </span>
               <button
                 onClick={() => setMobileMenuOpen(false)}
-                className="p-1.5 text-titanium-500"
+                className="p-1.5 text-burgundy-100 hover:text-white"
                 aria-label={t('close')}
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
+            <nav className="flex-1 overflow-y-auto p-3 space-y-1">
               {navItems.map((item) => {
                 const active = activeTab === item.id;
+                const IconComp = item.Icon;
                 const showStockBadge = item.id === 'stock' && lowStockCount > 0;
                 const badgeTone = hasOutOfStock
-                  ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/70 dark:text-red-300 dark:border-red-800/80'
-                  : 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800/80';
+                  ? 'bg-red-500 text-white border-red-400'
+                  : 'bg-amber-400 text-titanium-950 border-amber-300';
                 return (
                   <button
                     key={item.id}
                     onClick={() => handleSelectNav(item.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg text-left ${
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-sm font-medium rounded-xl text-left transition-colors ${
                       active
-                        ? 'bg-burgundy-50 dark:bg-burgundy-950 text-burgundy-800 dark:text-burgundy-300 font-semibold'
-                        : 'text-titanium-600 dark:text-titanium-400'
+                        ? 'bg-white text-burgundy-900 dark:bg-burgundy-600 dark:text-white font-semibold shadow-sm'
+                        : 'text-burgundy-100/85 dark:text-titanium-300 hover:bg-white/12 dark:hover:bg-titanium-800/70 hover:text-white'
                     }`}
                   >
-                    <span className="text-lg leading-none shrink-0" aria-hidden="true">
-                      {item.emoji}
-                    </span>
+                    <IconComp
+                      className={`w-[18px] h-[18px] shrink-0 ${
+                        active ? 'text-burgundy-700 dark:text-white' : ''
+                      }`}
+                      strokeWidth={active ? 2.15 : 1.75}
+                      aria-hidden="true"
+                    />
                     <span className="truncate">{item.label}</span>
                     {showStockBadge && (
                       <span
-                        className={`ml-auto px-1.5 py-0.5 text-[10px] font-mono-num font-semibold rounded-md border leading-none shrink-0 ${badgeTone}`}
+                        className={`ml-auto px-1.5 py-0.5 text-[10px] font-mono-num font-bold rounded-md border leading-none shrink-0 ${badgeTone}`}
                       >
                         {lowStockCount > 99 ? '99+' : lowStockCount}
                       </span>
@@ -428,7 +457,7 @@ function PosShell() {
                 );
               })}
             </nav>
-            <div className="p-3 border-t border-titanium-200 dark:border-titanium-800 space-y-2">
+            <div className="p-3 border-t border-white/12 dark:border-titanium-800 space-y-2">
               {!isAdmin && subscriptionExpiry !== null && (
                 <button
                   type="button"
@@ -438,8 +467,8 @@ function PosShell() {
                   }}
                   className={`w-full text-left px-3 py-2 rounded-lg border text-xs transition-colors ${
                     remainingDays !== null && remainingDays <= 5
-                      ? 'bg-amber-50 dark:bg-amber-950/35 border-amber-200 dark:border-amber-900/60 text-amber-900 dark:text-amber-200'
-                      : 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200/80 dark:border-emerald-900/60 text-emerald-900 dark:text-emerald-200'
+                      ? 'bg-amber-400/15 border-amber-300/40 text-amber-200'
+                      : 'bg-white/10 border-white/15 text-burgundy-50'
                   }`}
                 >
                   <div className="font-semibold font-mono-num truncate">
@@ -453,13 +482,13 @@ function PosShell() {
               <div className="flex gap-2">
                 <button
                   onClick={() => setLang(lang === 'my' ? 'en' : 'my')}
-                  className="flex-1 py-2 text-xs font-medium bg-titanium-100 dark:bg-titanium-800 rounded-md"
+                  className="flex-1 py-2 text-xs font-medium text-white bg-white/12 hover:bg-white/20 border border-white/15 rounded-lg"
                 >
                   {lang === 'my' ? 'Switch to EN' : 'မြန်မာဘာသာ'}
                 </button>
                 <button
                   onClick={toggleDarkMode}
-                  className="px-3 py-2 bg-titanium-100 dark:bg-titanium-800 text-titanium-700 dark:text-burgundy-300 rounded-md"
+                  className="px-3 py-2 bg-white/12 hover:bg-white/20 text-white border border-white/15 rounded-lg"
                 >
                   {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
                 </button>
@@ -469,7 +498,7 @@ function PosShell() {
                   <button
                     onClick={loginWithGoogle}
                     disabled={signingIn}
-                    className="w-full py-2 text-xs font-semibold text-white bg-burgundy-700 dark:bg-burgundy-600 disabled:opacity-50 rounded-lg"
+                    className="w-full py-2 text-xs font-semibold text-burgundy-900 bg-white hover:bg-burgundy-50 disabled:opacity-50 rounded-lg"
                   >
                     {signingIn ? '...' : t('signInGoogle')}
                   </button>
@@ -477,7 +506,7 @@ function PosShell() {
               ) : (
                 <button
                   onClick={logout}
-                  className="w-full py-2 text-xs font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 rounded-lg"
+                  className="w-full py-2 text-xs font-medium text-red-200 bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 rounded-lg"
                 >
                   {t('signOut')} ({user.email})
                 </button>
@@ -490,17 +519,17 @@ function PosShell() {
       {/* Main Workspace Column */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Clean Contextual Top Bar (Single Row) */}
-        <header className="h-16 sticky top-0 z-30 bg-white/95 dark:bg-titanium-900/90 backdrop-blur-md border-b border-titanium-200 dark:border-titanium-800/90 px-4 sm:px-6 flex items-center justify-between gap-4">
+        <header className="h-16 sticky top-0 z-30 bg-white/95 dark:bg-titanium-900/95 backdrop-blur-md border-b border-titanium-200/90 dark:border-titanium-800/90 shadow-2xs px-4 sm:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 -ml-2 text-titanium-600 dark:text-titanium-300 rounded-lg"
+              className="lg:hidden p-2 -ml-2 text-burgundy-800 dark:text-titanium-300 hover:bg-burgundy-50 dark:hover:bg-titanium-800 rounded-lg"
               aria-label="Open menu"
             >
               <Menu className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2 text-sm min-w-0">
-              <span className="hidden sm:inline text-titanium-500 dark:text-titanium-400 truncate max-w-[180px]">
+              <span className="hidden sm:inline font-semibold text-burgundy-800 dark:text-burgundy-300 truncate max-w-[180px]">
                 {shop.shopName}
               </span>
               <span className="hidden sm:inline text-titanium-300 dark:text-titanium-700">/</span>
@@ -531,7 +560,7 @@ function PosShell() {
             />
             <button
               onClick={() => setActiveTab('pos')}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 dark:ring-1 dark:ring-burgundy-400/30 rounded-lg transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-burgundy-700 hover:bg-burgundy-800 dark:bg-burgundy-600 dark:hover:bg-burgundy-500 shadow-xs shadow-burgundy-900/20 rounded-lg transition-colors whitespace-nowrap shrink-0"
             >
               <Plus className="w-4 h-4" />
               {t('quickSale')}

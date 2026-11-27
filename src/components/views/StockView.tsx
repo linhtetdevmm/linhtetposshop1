@@ -607,7 +607,8 @@ export const StockView: React.FC<StockViewProps> = ({
                   <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('marginPercent')}</label>
                   <input
                     type="number"
-                    step="0.5"
+                    step="any"
+                    inputMode="decimal"
                     min={0}
                     required
                     value={epMargin}

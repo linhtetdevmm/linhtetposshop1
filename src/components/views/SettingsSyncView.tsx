@@ -111,13 +111,15 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
     e.preventDefault();
     setBusyAction('saveShop');
     try {
+      const parsedMargin = Number(defaultMarginPercent);
       await updateShopSettings({
         shopName,
         shopSubtitle,
         phone,
         address,
         receiptFooter,
-        defaultMarginPercent: Number(defaultMarginPercent) || 20,
+        defaultMarginPercent:
+          Number.isFinite(parsedMargin) && parsedMargin >= 0 ? parsedMargin : 20,
       });
     } finally {
       setBusyAction(null);
@@ -528,7 +530,8 @@ export const SettingsSyncView: React.FC<{ initialTab?: 'profile' | 'cloud' | 'gu
                   type="number"
                   min={0}
                   max={1000}
-                  step="0.5"
+                  step="any"
+                  inputMode="decimal"
                   value={defaultMarginPercent}
                   onChange={(e) => setDefaultMarginPercent(e.target.value)}
                   className="w-full px-3.5 py-2 text-sm font-mono-num bg-titanium-50 dark:bg-titanium-950 border border-titanium-200 dark:border-titanium-700 rounded-lg focus:outline-none focus:border-burgundy-600"
