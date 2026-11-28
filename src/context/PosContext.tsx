@@ -71,6 +71,7 @@ import {
   resolveSubscriptionExpiryMs,
   timestampToMs,
 } from '../lib/accessControl';
+import { sanitizeProductImageUrl } from '../lib/imageUtils';
 import {
   checkClientSupabaseHealth,
   deleteSupabaseDebt,
@@ -1843,6 +1844,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         sellPrice: clampNumber(input.sellPrice, 0, 1000000000),
         stock: clampNumber(input.stock, -1000000, 100000000),
         minStock: clampNumber(input.minStock, 0, 10000000),
+        imageUrl: sanitizeProductImageUrl(input.imageUrl),
       };
 
       if (!user) {
@@ -3593,6 +3595,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             sellPrice: clampNumber(p.sellPrice, 0, 1000000000),
             stock: clampNumber(p.stock, -1000000, 100000000),
             minStock: clampNumber(p.minStock, 0, 10000000),
+            imageUrl: sanitizeProductImageUrl(p.imageUrl),
           });
         });
 

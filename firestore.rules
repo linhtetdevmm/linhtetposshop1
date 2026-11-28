@@ -137,7 +137,7 @@ service cloud.firestore {
 
     function isValidProduct(data, shopId) {
       return data.keys().hasAll(['ownerId', 'sku', 'name', 'category', 'unit', 'costPrice', 'marginPercent', 'sellPrice', 'stock', 'minStock', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['ownerId', 'sku', 'name', 'category', 'unit', 'costPrice', 'marginPercent', 'sellPrice', 'stock', 'minStock', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'sku', 'name', 'category', 'unit', 'costPrice', 'marginPercent', 'sellPrice', 'stock', 'minStock', 'imageUrl', 'createdAt', 'updatedAt'])
         && isValidId(data.ownerId)
         && data.ownerId == shopId
         && (data.ownerId == request.auth.uid || isAdmin())
@@ -150,6 +150,7 @@ service cloud.firestore {
         && data.sellPrice is number && data.sellPrice >= 0 && data.sellPrice <= 1000000000
         && data.stock is number && data.stock >= -1000000 && data.stock <= 100000000
         && data.minStock is number && data.minStock >= 0 && data.minStock <= 10000000
+        && isOptString(data, 'imageUrl', 180000)
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -438,7 +439,7 @@ service cloud.firestore {
           && incoming().updatedAt == request.time
           && (
             isAdmin() ||
-            (isShopOwner(shopId) && incoming().diff(existing()).affectedKeys().hasOnly(['sku', 'name', 'category', 'unit', 'costPrice', 'marginPercent', 'sellPrice', 'stock', 'minStock', 'updatedAt']))
+            (isShopOwner(shopId) && incoming().diff(existing()).affectedKeys().hasOnly(['sku', 'name', 'category', 'unit', 'costPrice', 'marginPercent', 'sellPrice', 'stock', 'minStock', 'imageUrl', 'updatedAt']))
           );
 
         allow delete: if isVerified() && isValidId(shopId) && isValidId(productId) && (isShopOwner(shopId) || isAdmin());

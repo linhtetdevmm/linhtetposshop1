@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Minus,
+  Package,
   Pencil,
   Plus,
   Receipt,
@@ -17,6 +18,7 @@ import type { PaymentMethod, Product, Sale, SaleItem } from '../../types/pos';
 import { usePos } from '../../context/PosContext';
 import { useT } from '../../i18n/translations';
 import { formatMMK } from '../../lib/format';
+import { sanitizeProductImageUrl } from '../../lib/imageUtils';
 import { BarcodeScannerModal } from '../BarcodeScannerModal';
 
 interface PosSalesViewProps {
@@ -158,6 +160,15 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
   const categories = useMemo(() => {
     const set = new Set(products.map((p) => p.category));
     return ['ALL', ...Array.from(set)];
+  }, [products]);
+
+  const productImageMap = useMemo(() => {
+    const map = new Map<string, string>();
+    products.forEach((p) => {
+      const safe = sanitizeProductImageUrl(p.imageUrl);
+      if (safe) map.set(p.id, safe);
+    });
+    return map;
   }, [products]);
 
   const filteredProducts = useMemo(() => {
@@ -440,6 +451,7 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
                 const inCartQty =
                   cart.find((i) => i.productId === product.id)?.qty || 0;
                 const isLow = product.stock <= product.minStock;
+                const safeImg = sanitizeProductImageUrl(product.imageUrl);
                 return (
                   <button
                     key={product.id}
@@ -451,18 +463,33 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
                         : 'border-titanium-200/90 dark:border-titanium-800'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-[11px] font-mono-num text-titanium-500 dark:text-titanium-400">
-                        {product.sku} · {product.category}
-                      </span>
-                      {inCartQty > 0 && (
-                        <span className="text-xs font-mono-num font-bold text-burgundy-700 dark:text-burgundy-300">
-                          ×{inCartQty}
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-1.5 text-sm font-semibold text-titanium-900 dark:text-titanium-50 line-clamp-2 min-h-[2.6rem]">
-                      {product.name}
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-12 h-12 rounded-lg border border-titanium-200/90 dark:border-titanium-700 bg-titanium-50 dark:bg-titanium-950 overflow-hidden flex items-center justify-center shrink-0">
+                        {safeImg ? (
+                          <img
+                            src={safeImg}
+                            alt={product.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <Package className="w-5 h-5 text-titanium-300 dark:text-titanium-600" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-1.5">
+                          <span className="text-[11px] font-mono-num text-titanium-500 dark:text-titanium-400 truncate">
+                            {product.sku} · {product.category}
+                          </span>
+                          {inCartQty > 0 && (
+                            <span className="text-xs font-mono-num font-bold text-burgundy-700 dark:text-burgundy-300 shrink-0">
+                              ×{inCartQty}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 text-sm font-semibold text-titanium-900 dark:text-titanium-50 line-clamp-2 min-h-[2.4rem]">
+                          {product.name}
+                        </div>
+                      </div>
                     </div>
                     <div className="mt-3 pt-2.5 border-t border-titanium-100 dark:border-titanium-800 flex items-baseline justify-between">
                       <span className="text-sm font-bold font-mono-num text-burgundy-800 dark:text-burgundy-300">
@@ -541,11 +568,20 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
                   </div>
                 ) : (
                   <div className="divide-y divide-titanium-100 dark:divide-titanium-800 max-h-56 lg:max-h-60 overflow-y-auto pr-1">
-                    {cart.map((item) => (
+                    {cart.map((item) => {
+                      const thumb = productImageMap.get(item.productId);
+                      return (
                       <div
                         key={item.productId}
                         className="py-2.5 flex items-center justify-between gap-2"
                       >
+                        {thumb && (
+                          <img
+                            src={thumb}
+                            alt={item.name}
+                            className="w-8 h-8 rounded-md object-cover border border-titanium-200 dark:border-titanium-700 shrink-0"
+                          />
+                        )}
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-medium text-titanium-900 dark:text-titanium-50 truncate">
                             {item.name}
@@ -577,7 +613,8 @@ export const PosSalesView: React.FC<PosSalesViewProps> = ({ onOpenVoucher }) => 
                           {formatMMK(item.lineTotal)}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 

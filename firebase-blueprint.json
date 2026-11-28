@@ -34,6 +34,7 @@
         "sellPrice": { "type": "number" },
         "stock": { "type": "number" },
         "minStock": { "type": "number" },
+        "imageUrl": { "type": "string", "maxLength": 180000 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },

@@ -90,6 +90,7 @@ export interface Product {
   sellPrice: number;
   stock: number;
   minStock: number;
+  imageUrl?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
 }

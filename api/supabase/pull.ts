@@ -120,6 +120,7 @@ export default async function handler(req: VercelReq, res: VercelRes) {
           sellPrice: Number(r.sell_price),
           stock: Number(r.stock),
           minStock: Number(r.min_stock),
+          imageUrl: typeof r.image_url === 'string' ? r.image_url : '',
         })),
         sales: (salesRes.data || []).map((r) => ({
           id: r.id,

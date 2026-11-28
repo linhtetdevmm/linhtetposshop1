@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pencil, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Package, Pencil, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import type { Product, StockLog } from '../../types/pos';
 import { usePos } from '../../context/PosContext';
 import { useT } from '../../i18n/translations';
 import { calculateMarginPercent, calculateSellPrice, formatMMK } from '../../lib/format';
+import { sanitizeProductImageUrl } from '../../lib/imageUtils';
+import { ProductImagePicker } from '../ProductImagePicker';
 import {
   getEffectiveStockThreshold,
   getLowStockProducts,
@@ -67,6 +69,7 @@ export const StockView: React.FC<StockViewProps> = ({
   const [epSell, setEpSell] = useState('0');
   const [epStock, setEpStock] = useState('0');
   const [epMinStock, setEpMinStock] = useState('0');
+  const [epImageUrl, setEpImageUrl] = useState('');
 
   // Stock Log Edit modal
   const [editLog, setEditLog] = useState<StockLog | null>(null);
@@ -115,6 +118,7 @@ export const StockView: React.FC<StockViewProps> = ({
     setEpSell(String(p.sellPrice));
     setEpStock(String(p.stock));
     setEpMinStock(String(p.minStock));
+    setEpImageUrl(p.imageUrl || '');
   };
 
   const handleSaveEditProduct = async (e: React.FormEvent) => {
@@ -131,6 +135,7 @@ export const StockView: React.FC<StockViewProps> = ({
         sellPrice: Number(epSell) || 0,
         stock: Number(epStock) || 0,
         minStock: Number(epMinStock) || 0,
+        imageUrl: sanitizeProductImageUrl(epImageUrl),
       },
       editProd.id
     );
@@ -296,7 +301,18 @@ export const StockView: React.FC<StockViewProps> = ({
                   >
                     <td className="px-5 py-3 font-mono-num text-xs text-titanium-500 dark:text-titanium-400">{p.sku}</td>
                     <td className="px-4 py-3 font-medium text-titanium-900 dark:text-titanium-50">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-md border border-titanium-200 dark:border-titanium-700 bg-titanium-50 dark:bg-titanium-950 overflow-hidden flex items-center justify-center shrink-0">
+                          {sanitizeProductImageUrl(p.imageUrl) ? (
+                            <img
+                              src={sanitizeProductImageUrl(p.imageUrl)}
+                              alt={p.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <Package className="w-3.5 h-3.5 text-titanium-300 dark:text-titanium-600" />
+                          )}
+                        </div>
                         <span>{p.name}</span>
                         {isLow && (
                           <span
@@ -547,7 +563,8 @@ export const StockView: React.FC<StockViewProps> = ({
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-5 space-y-3.5">
+            <div className="p-5 space-y-3.5 max-h-[75vh] overflow-y-auto">
+              <ProductImagePicker value={epImageUrl} onChange={setEpImageUrl} lang={lang} />
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs text-titanium-500 dark:text-titanium-400 mb-1">{t('sku')}</label>

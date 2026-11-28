@@ -801,7 +801,7 @@ export async function upsertSupabaseProduct(
 ): Promise<{ ok: boolean; error?: string }> {
   const supabase = getClientSupabase();
   if (!supabase) return { ok: false, error: 'Supabase not configured.' };
-  const { error } = await supabase.from('pos_products').upsert({
+  const baseRow = {
     id: String(p.id),
     owner_id: ownerId,
     sku: String(p.sku || ''),
@@ -814,7 +814,15 @@ export async function upsertSupabaseProduct(
     stock: Number(p.stock || 0),
     min_stock: Number(p.minStock || 5),
     updated_at: new Date().toISOString(),
+  };
+  let { error } = await supabase.from('pos_products').upsert({
+    ...baseRow,
+    image_url: typeof p.imageUrl === 'string' ? p.imageUrl : '',
   });
+  if (error && /image_url|PGRST204/i.test(error.message)) {
+    const retry = await supabase.from('pos_products').upsert(baseRow);
+    error = retry.error;
+  }
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
@@ -1028,7 +1036,7 @@ export async function pushPosDataDirectToSupabase(
     }
 
     if (products.length > 0) {
-      const rows = products.map((p) => ({
+      const baseRows = products.map((p) => ({
         id: String(p.id),
         owner_id: ownerId,
         sku: String(p.sku || ''),
@@ -1042,7 +1050,15 @@ export async function pushPosDataDirectToSupabase(
         min_stock: Number(p.minStock || 5),
         updated_at: new Date().toISOString(),
       }));
-      const { error } = await supabase.from('pos_products').upsert(rows);
+      const rowsWithImg = baseRows.map((row, idx) => ({
+        ...row,
+        image_url: typeof products[idx]?.imageUrl === 'string' ? products[idx].imageUrl : '',
+      }));
+      let { error } = await supabase.from('pos_products').upsert(rowsWithImg);
+      if (error && /image_url|PGRST204/i.test(error.message)) {
+        const retry = await supabase.from('pos_products').upsert(baseRows);
+        error = retry.error;
+      }
       if (error) throw new Error(`pos_products: ${error.message}`);
     }
 
@@ -1246,6 +1262,7 @@ export async function pullPosDataDirectFromSupabase(
         sellPrice: Number(r.sell_price),
         stock: Number(r.stock),
         minStock: Number(r.min_stock),
+        imageUrl: typeof r.image_url === 'string' ? r.image_url : '',
       })),
       sales: (salesRes.data || [])
         .map((r) => ({

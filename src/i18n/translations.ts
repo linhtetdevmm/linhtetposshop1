@@ -119,6 +119,11 @@ export const translations = {
     delete: 'ဖျက်မည်',
     edit: 'ပြင်မည်',
     pricingHelper: 'ဝယ်ဈေးနှင့် အမြတ် (%) ထည့်လျှင် ရောင်းဈေးကို အလိုအလျောက် တွက်ပေးပါမည်။',
+    productImage: 'ပစ္စည်းပုံ (ရွေးချယ်ထည့်ရန်)',
+    uploadImage: 'ပုံရွေးမည် / ရိုက်မည်',
+    imageUrlPlaceholder: 'သို့မဟုတ် ပုံလင့် (https://...) ထည့်ပါ',
+    removeImage: 'ပုံဖယ်မည်',
+    imageOptionalHint: 'ပုံအရွယ်အစားကို အလိုအလျောက် ချုံ့သိမ်းပေးပါမည်။',
 
     // Purchases
     newPurchase: 'အဝယ်စာရင်းအသစ်',
@@ -360,6 +365,11 @@ export const translations = {
     delete: 'Delete',
     edit: 'Edit',
     pricingHelper: 'Enter cost price and profit margin % to calculate selling price automatically.',
+    productImage: 'Product Photo (Optional)',
+    uploadImage: 'Upload / Camera',
+    imageUrlPlaceholder: 'Or paste image URL (https://...)',
+    removeImage: 'Remove',
+    imageOptionalHint: 'Auto-compressed for fast sync and offline use.',
 
     // Purchases
     newPurchase: 'New Purchase',

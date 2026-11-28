@@ -611,7 +611,7 @@ async function startServer() {
       }
 
       if (Array.isArray(products) && products.length > 0) {
-        const rows = products.map((p: Record<string, unknown>) => ({
+        const baseRows = products.map((p: Record<string, unknown>) => ({
           id: String(p.id),
           owner_id: ownerId,
           sku: String(p.sku || ''),
@@ -625,7 +625,16 @@ async function startServer() {
           min_stock: Number(p.minStock || 5),
           updated_at: new Date().toISOString(),
         }));
-        const { error } = await supabase.from('pos_products').upsert(rows);
+        const rowsWithImg = baseRows.map((row, idx) => ({
+          ...row,
+          image_url:
+            typeof products[idx]?.imageUrl === 'string' ? String(products[idx].imageUrl) : '',
+        }));
+        let { error } = await supabase.from('pos_products').upsert(rowsWithImg);
+        if (error && /image_url|PGRST204/i.test(error.message)) {
+          const retry = await supabase.from('pos_products').upsert(baseRows);
+          error = retry.error;
+        }
         if (error) throw new Error(`pos_products: ${error.message}`);
       }
 
@@ -838,6 +847,7 @@ async function startServer() {
             sellPrice: Number(r.sell_price),
             stock: Number(r.stock),
             minStock: Number(r.min_stock),
+            imageUrl: typeof r.image_url === 'string' ? r.image_url : '',
           })),
           sales: (salesRes.data || []).map((r) => ({
             id: r.id,
