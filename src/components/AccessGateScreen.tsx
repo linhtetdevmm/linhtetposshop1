@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CalendarClock,
@@ -39,6 +39,7 @@ export const AccessGateScreen: React.FC = () => {
     isSubscriptionExpired,
     refreshSubscriptionStatus,
     loginWithSupabase,
+    loginWithPassLink,
     loginWithGoogle,
     logout,
     redeemAccessPass,
@@ -48,24 +49,90 @@ export const AccessGateScreen: React.FC = () => {
   const [passwordInput, setPasswordInput] = useState('');
   const [authInfoMsg, setAuthInfoMsg] = useState<string | null>(null);
 
-  const [passInput, setPassInput] = useState(() => {
+  const [urlPassCode] = useState(() => {
     try {
       const fromUrl = new URLSearchParams(window.location.search).get('pass');
       if (fromUrl && fromUrl.trim().length >= 6) {
-        const normalized = normalizePassCode(fromUrl);
-        sessionStorage.setItem('linpos_pending_pass', normalized);
-        return normalized;
+        return normalizePassCode(fromUrl);
+      }
+    } catch {
+      // Ignore URL parse errors
+    }
+    return '';
+  });
+
+  const [passInput, setPassInput] = useState(() => {
+    try {
+      if (urlPassCode) {
+        sessionStorage.setItem('linpos_pending_pass', urlPassCode);
+        return urlPassCode;
       }
       return sessionStorage.getItem('linpos_pending_pass') || '';
     } catch {
-      return '';
+      return urlPassCode || '';
     }
   });
+  const [autoLoggingIn, setAutoLoggingIn] = useState(false);
+  const autoLoginAttemptedRef = useRef<string | null>(null);
+  const autoRedeemAttemptedRef = useRef<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [checkingRenewal, setCheckingRenewal] = useState(false);
   const [renewalInfoMsg, setRenewalInfoMsg] = useState<string | null>(null);
   const [copiedRequest, setCopiedRequest] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const clearPassFromUrlAndStorage = () => {
+    try {
+      sessionStorage.removeItem('linpos_pending_pass');
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('pass')) {
+        url.searchParams.delete('pass');
+        window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      }
+    } catch {
+      // Ignore URL/storage errors
+    }
+  };
+
+  useEffect(() => {
+    if (!urlPassCode || !supabaseAuthReady) return;
+    if (accessStatus === 'unauthenticated' && !user) {
+      if (autoLoginAttemptedRef.current === urlPassCode) return;
+      autoLoginAttemptedRef.current = urlPassCode;
+      let active = true;
+      setAutoLoggingIn(true);
+      void loginWithPassLink(urlPassCode).then((res) => {
+        if (!active) return;
+        if (res.ok) {
+          clearPassFromUrlAndStorage();
+        }
+        setAutoLoggingIn(false);
+      });
+      return () => {
+        active = false;
+      };
+    }
+    if (user && (accessStatus === 'needs_pass' || accessStatus === 'expired')) {
+      const key = `${user.uid}:${urlPassCode}`;
+      if (autoRedeemAttemptedRef.current === key) return;
+      autoRedeemAttemptedRef.current = key;
+      let active = true;
+      setAutoLoggingIn(true);
+      void redeemAccessPass(urlPassCode).then((res) => {
+        if (!active) return;
+        if (res.ok) {
+          setPassInput('');
+          clearPassFromUrlAndStorage();
+        } else if (res.error) {
+          setErrorMsg(res.error);
+        }
+        setAutoLoggingIn(false);
+      });
+      return () => {
+        active = false;
+      };
+    }
+  }, [urlPassCode, supabaseAuthReady, accessStatus, user, loginWithPassLink, redeemAccessPass]);
 
   const handleSupabaseAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,7 +252,7 @@ export const AccessGateScreen: React.FC = () => {
     return null;
   })();
 
-  if (accessStatus === 'loading') {
+  if (accessStatus === 'loading' || autoLoggingIn) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-titanium-50 dark:bg-titanium-950 p-6">
         <div className="flex flex-col items-center gap-3 text-center">
@@ -193,7 +260,13 @@ export const AccessGateScreen: React.FC = () => {
             <ShieldCheck className="w-5 h-5 text-burgundy-700 dark:text-burgundy-300 animate-pulse" />
           </div>
           <p className="text-xs font-medium text-titanium-600 dark:text-titanium-400">
-            {lang === 'my' ? 'ဝင်ခွင့်လိုင်စင် စစ်ဆေးနေပါသည်...' : 'Verifying subscription license...'}
+            {autoLoggingIn
+              ? lang === 'my'
+                ? 'Link မှတစ်ဆင့် တိုက်ရိုက် ဝင်ရောက်နေပါသည်...'
+                : 'Signing you in directly from your access link...'
+              : lang === 'my'
+              ? 'ဝင်ခွင့်လိုင်စင် စစ်ဆေးနေပါသည်...'
+              : 'Verifying subscription license...'}
           </p>
         </div>
       </div>
@@ -280,10 +353,10 @@ export const AccessGateScreen: React.FC = () => {
               {!user
                 ? lang === 'my'
                   ? supabaseAuthReady
-                    ? 'Link ရှိရုံဖြင့် ဝင်ရောက်၍ မရပါ။ သင့် Email အကောင့်ဖြင့်ဝင်ပြီး Admin ပေးထားသော Random Pass ဖြင့် သတ်မှတ်သက်တမ်းအတွင်း အသုံးပြုနိုင်ပါသည်။'
-                    : 'Link ရှိရုံဖြင့် ဝင်ရောက်၍ မရပါ။ သင့်ကိုယ်ပိုင် Gmail ဖြင့်ဝင်ပြီး Admin ပေးထားသော Random Pass ဖြင့် သတ်မှတ်သက်တမ်းအတွင်း အသုံးပြုနိုင်ပါသည်။'
+                    ? 'Admin ထုတ်ပေးထားသော Key Link ကို နှိပ်၍ တိုက်ရိုက် ဝင်ရောက်နိုင်သလို Email နှင့် Password ဖြင့်လည်း သတ်မှတ်သက်တမ်းအတွင်း အသုံးပြုနိုင်ပါသည်။'
+                    : 'သင့်ကိုယ်ပိုင် Gmail ဖြင့်ဝင်ပြီး Admin ပေးထားသော Random Pass ဖြင့် သတ်မှတ်သက်တမ်းအတွင်း အသုံးပြုနိုင်ပါသည်။'
                   : supabaseAuthReady
-                  ? 'This workspace is protected. Sign in with your Email account and activate with an Admin-issued Access Pass.'
+                  ? 'Sign in directly via your Admin-issued Key Link, or use your Email & Password.'
                   : 'This workspace is protected. Sign in with your Google Account and activate with an Admin-issued Access Pass.'
                 : expiredState
                 ? lang === 'my'
@@ -298,10 +371,29 @@ export const AccessGateScreen: React.FC = () => {
           {!user ? (
             <div className="space-y-4">
               {passInput.trim().length >= 6 && (
-                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 text-[11px] text-emerald-900 dark:text-emerald-200 leading-relaxed">
-                  {lang === 'my'
-                    ? `Access Pass (${passInput}) ကို Link မှတစ်ဆင့် အသင့်ထည့်သွင်းထားပါသည်။ Admin ထုတ်ပေးထားသော အကောင့်ဖြင့် ဝင်ရောက်ပြီး အတည်ပြုနိုင်ပါမည်။`
-                    : `Access Pass (${passInput}) is pre-filled from your invite link. Sign in with your Admin-issued account below to activate it.`}
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/70 space-y-2.5 text-[11px] text-emerald-900 dark:text-emerald-200 leading-relaxed">
+                  <div>
+                    {lang === 'my'
+                      ? `Access Pass (${passInput}) ကို Link မှတစ်ဆင့် အသင့်ထည့်သွင်းထားပါသည်။`
+                      : `Access Pass (${passInput}) is ready from your invite link.`}
+                  </div>
+                  {supabaseAuthReady && (
+                    <button
+                      type="button"
+                      disabled={signingIn}
+                      onClick={() => {
+                        void loginWithPassLink(passInput).then((res) => {
+                          if (res.ok) clearPassFromUrlAndStorage();
+                        });
+                      }}
+                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 rounded-lg transition-colors whitespace-nowrap"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      {lang === 'my'
+                        ? 'ဤ Key Link ဖြင့် တန်းဝင်မည်'
+                        : 'Sign In Directly with Pass Link'}
+                    </button>
+                  )}
                 </div>
               )}
               {supabaseAuthReady && (

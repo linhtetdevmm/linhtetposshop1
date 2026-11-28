@@ -329,7 +329,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
     p: AccessPass,
     creds?: { email: string; password: string } | null
   ) => {
-    const directUrl = buildKeyLink(p.code, !creds);
+    const directUrl = buildKeyLink(p.code, true);
     const expStr = formatExpiryDate(p.expiresAtMs);
     if (creds) {
       return [
@@ -339,7 +339,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
         `Password: ${creds.password}`,
         `Bound Key: ${p.code}`,
         `Valid Until: ${expStr} (${p.maxDevices} Device${p.maxDevices > 1 ? 's' : ''})`,
-        `အထက်ပါ Web Link ကိုဖွင့်ပြီး Email နှင့် Password ဖြင့် တိုက်ရိုက်ဝင်ရောက်အသုံးပြုနိုင်ပါသည်။`,
+        `အထက်ပါ Web Link ကို နှိပ်လိုက်ရုံဖြင့် POS စနစ်ထဲသို့ တိုက်ရိုက် ဝင်ရောက်အသုံးပြုနိုင်ပါသည်။`,
       ].join('\n');
     }
     return [
@@ -348,9 +348,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
       p.assignedEmail ? `Bound Email: ${p.assignedEmail}` : null,
       `Access Pass: ${p.code}`,
       `Valid Until: ${expStr} (${p.maxDevices} Device${p.maxDevices > 1 ? 's' : ''})`,
-      p.assignedEmail
-        ? `အထက်ပါ Link ကို နှိပ်ပြီး ${p.assignedEmail} ဖြင့် ဝင်ရောက်လိုက်ရုံဖြင့် Key နှင့် တိုက်ရိုက်ချိတ်ဆက်ပေးပါမည်။`
-        : `အထက်ပါ Link ကို နှိပ်ပြီး အကောင့်ဝင်ကာ Access Pass ကို ထည့်သွင်းအသုံးပြုနိုင်ပါသည်။`,
+      `အထက်ပါ Link ကို နှိပ်လိုက်ရုံဖြင့် POS စနစ်ထဲသို့ တိုက်ရိုက် ဝင်ရောက်အသုံးပြုနိုင်ပါသည်။`,
     ]
       .filter(Boolean)
       .join('\n');
@@ -361,7 +359,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
     creds?: { email: string; password: string } | null
   ) => {
     const text = buildShareInvite(p, creds);
-    const directUrl = buildKeyLink(p.code, !creds);
+    const directUrl = buildKeyLink(p.code, true);
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
         await navigator.share({
@@ -1393,7 +1391,7 @@ export const AdminAccessView: React.FC<AdminAccessViewProps> = ({ onNavigate }) 
                     type="button"
                     onClick={() =>
                       copyText(
-                        buildKeyLink(lastCreatedPass.code, !lastCreatedCredentials),
+                        buildKeyLink(lastCreatedPass.code, true),
                         'Key Link Copy ကူးပြီးပါပြီ။',
                         'Key link copied.'
                       )

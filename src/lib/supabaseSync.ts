@@ -215,6 +215,68 @@ export async function signUpWithSupabaseEmail(
   return { ok: true, user: mapped ?? undefined, needsEmailConfirm: false };
 }
 
+export async function signInWithSupabasePassLink(
+  passCode: string,
+  deviceId: string
+): Promise<{
+  ok: boolean;
+  user?: AuthUser;
+  code?: string;
+  maxDevices?: number;
+  error?: string;
+}> {
+  const supabase = getClientSupabase();
+  if (!supabase) {
+    return { ok: false, code: 'supabase_unconfigured', error: 'Supabase is not configured.' };
+  }
+  try {
+    const resp = await fetch('/api/auth/pass-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passCode, deviceId }),
+    });
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      return {
+        ok: false,
+        code: 'server_unavailable',
+        error: 'Direct link sign-in service is unavailable on this host.',
+      };
+    }
+    const json = (await resp.json()) as {
+      ok?: boolean;
+      code?: string;
+      maxDevices?: number;
+      tokenHash?: string;
+      error?: string;
+    };
+    if (!resp.ok || !json.ok || !json.tokenHash) {
+      return {
+        ok: false,
+        code: json.code,
+        maxDevices: json.maxDevices,
+        error: json.error || 'Failed to sign in with access pass link.',
+      };
+    }
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      token_hash: json.tokenHash,
+      type: 'magiclink',
+    });
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+    const mapped = mapSupabaseUser(data.user ?? data.session?.user ?? null);
+    return { ok: true, user: mapped ?? undefined };
+  } catch (err) {
+    return {
+      ok: false,
+      code: 'network_error',
+      error: err instanceof Error ? err.message : 'Unable to complete link sign-in.',
+    };
+  }
+}
+
 export async function signOutSupabase(): Promise<void> {
   const supabase = getClientSupabase();
   if (!supabase) return;

@@ -134,6 +134,20 @@ function PosShell() {
     });
   };
 
+  useEffect(() => {
+    if (accessStatus !== 'granted' || isSubscriptionExpired) return;
+    try {
+      sessionStorage.removeItem('linpos_pending_pass');
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('pass')) {
+        url.searchParams.delete('pass');
+        window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      }
+    } catch {
+      // Ignore URL/storage errors
+    }
+  }, [accessStatus, isSubscriptionExpired]);
+
   // Strict Access Gate: unauthorized or expired subscriptions cannot enter the POS shell
   if (accessStatus !== 'granted' || isSubscriptionExpired) {
     return <AccessGateScreen />;

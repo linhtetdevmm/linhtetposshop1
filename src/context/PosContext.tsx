@@ -81,12 +81,14 @@ import {
   deleteSupabaseSale,
   deleteSupabaseStockLog,
   fetchSupabaseUserLicense,
+  getClientSupabase,
   isClientSupabaseConfigured,
   onSupabaseAuthChange,
   pullPosDataDirectFromSupabase,
   pushPosDataDirectToSupabase,
   redeemSupabaseAccessPass,
   signInWithSupabaseEmail,
+  signInWithSupabasePassLink,
   signOutSupabase,
   signUpWithSupabaseEmail,
   upsertSupabaseDebt,
@@ -167,6 +169,7 @@ interface PosContextValue {
 
   // Auth Actions
   loginWithSupabase: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  loginWithPassLink: (passCode: string) => Promise<{ ok: boolean; code?: string; error?: string }>;
   registerWithSupabase: (
     email: string,
     password: string,
@@ -1433,6 +1436,69 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     },
     [lang, showToast]
+  );
+
+  const loginWithPassLink = useCallback(
+    async (passCode: string): Promise<{ ok: boolean; code?: string; error?: string }> => {
+      const cleaned = normalizePassCode(passCode);
+      if (cleaned.length < 6) {
+        return {
+          ok: false,
+          code: 'invalid_format',
+          error: lang === 'my' ? 'Access Pass ပုံစံ မမှန်ကန်ပါ။' : 'Invalid Access Pass format.',
+        };
+      }
+      setSigningIn(true);
+      setAuthError(null);
+      try {
+        const res = await signInWithSupabasePassLink(cleaned, deviceId);
+        if (!res.ok) {
+          let friendly = res.error || '';
+          if (res.code === 'not_found') {
+            friendly =
+              lang === 'my'
+                ? 'ဤ Link မှ Access Pass ကို ရှာမတွေ့ပါ။ Admin ထံတွင် Link အသစ်တောင်းခံပါ။'
+                : 'Access Pass from this link was not found. Please ask Admin for a valid link.';
+          } else if (res.code === 'revoked') {
+            friendly =
+              lang === 'my'
+                ? 'ဤ Access Pass ကို Admin မှ ပိတ်ထားပြီးဖြစ်ပါသည်။'
+                : 'This Access Pass has been revoked by Admin.';
+          } else if (res.code === 'expired') {
+            friendly =
+              lang === 'my'
+                ? 'ဤ Access Pass သည် သက်တမ်းကုန်ဆုံးသွားပြီးဖြစ်ပါသည်။'
+                : 'This Access Pass has already expired.';
+          } else if (res.code === 'device_limit') {
+            friendly =
+              lang === 'my'
+                ? `စက်အရေအတွက် (${res.maxDevices || 1} လုံး) ပြည့်နေပါပြီ။ Admin ထံတွင် Device Reset တောင်းပါ။`
+                : `Device limit (${res.maxDevices || 1}) reached. Ask Admin to reset devices.`;
+          } else if (res.code === 'admin_restricted') {
+            friendly =
+              lang === 'my'
+                ? 'Admin အကောင့်များအတွက် Email/Password ဖြင့် တိုက်ရိုက်ဝင်ရောက်ပါ။'
+                : 'Admin accounts must sign in directly.';
+          } else if (res.code === 'service_role_missing' || res.code === 'server_unavailable') {
+            friendly =
+              lang === 'my'
+                ? 'တိုက်ရိုက် Link ဝင်ရောက်မှုအတွက် Server (SUPABASE_SERVICE_ROLE_KEY) ချိတ်ဆက်ရန် လိုအပ်ပါသည်။ Admin ထုတ်ပေးထားသော Email/Password ဖြင့် ဝင်ရောက်နိုင်ပါသည်။'
+                : 'One-click link sign-in requires SUPABASE_SERVICE_ROLE_KEY on the server. Sign in below with your Admin-issued Email & Password.';
+          }
+          setAuthError(friendly);
+          return { ok: false, code: res.code, error: friendly };
+        }
+        showToast(
+          lang === 'my'
+            ? 'Link မှတစ်ဆင့် တိုက်ရိုက်ဝင်ရောက်ပြီးပါပြီ!'
+            : 'Signed in directly from access link!'
+        );
+        return { ok: true };
+      } finally {
+        setSigningIn(false);
+      }
+    },
+    [deviceId, lang, showToast]
   );
 
   const registerWithSupabase = useCallback(
@@ -3717,9 +3783,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return await tryDirectClientSync();
       }
 
+      const supaClient = getClientSupabase();
+      const accessToken = supaClient
+        ? (await supaClient.auth.getSession()).data.session?.access_token || ''
+        : '';
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+
       const res = await fetch('/api/supabase/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
       const contentType = res.headers.get('content-type') || '';
@@ -3819,9 +3892,16 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return await tryDirectClientPull();
       }
 
+      const supaClient = getClientSupabase();
+      const accessToken = supaClient
+        ? (await supaClient.auth.getSession()).data.session?.access_token || ''
+        : '';
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+
       const res = await fetch('/api/supabase/pull', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ ownerId }),
       });
       const contentType = res.headers.get('content-type') || '';
@@ -3905,6 +3985,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     expenses,
     deliveries,
     loginWithSupabase,
+    loginWithPassLink,
     registerWithSupabase,
     loginWithGoogle,
     logout,
